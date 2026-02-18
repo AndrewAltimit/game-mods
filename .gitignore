@@ -12,12 +12,6 @@ target/
 .DS_Store
 Thumbs.db
 
-# PSP build artifacts
-*.PBP
-*.SFO
-*.PRX
-psp_output_file.log
-
 # Secrets
 *.key
 *.pem
@@ -46,3 +40,6 @@ node_modules/
 # Scratch
 scratch/
 .local/
+
+# Build outputs
+outputs/
