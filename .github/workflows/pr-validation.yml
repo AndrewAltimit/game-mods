@@ -92,12 +92,11 @@ jobs:
           done
 
   # -- Gemini AI Code Review -----------------------------------------------
+  # DISABLED: AI reviews will be enabled in a future iteration.
   gemini-review:
     name: Gemini AI Code Review
     needs: fork-guard
-    if: >-
-      github.event_name == 'pull_request' &&
-      !github.event.pull_request.draft
+    if: false  # disabled until AI review pipeline is ready
     runs-on: self-hosted
     timeout-minutes: 30
     outputs:
@@ -187,13 +186,11 @@ jobs:
           if-no-files-found: ignore
 
   # -- Codex AI Code Review (secondary) ------------------------------------
+  # DISABLED: AI reviews will be enabled in a future iteration.
   codex-review:
     name: Codex AI Code Review
     needs: [fork-guard, gemini-review]
-    if: >-
-      github.event_name == 'pull_request' &&
-      !github.event.pull_request.draft &&
-      needs.gemini-review.result != 'skipped'
+    if: false  # disabled until AI review pipeline is ready
     runs-on: self-hosted
     timeout-minutes: 15
     continue-on-error: true
@@ -269,15 +266,11 @@ jobs:
           if-no-files-found: ignore
 
   # -- Agent Review Response (responds to Gemini/Codex feedback) -----------
+  # DISABLED: AI reviews will be enabled in a future iteration.
   agent-review-response:
     name: Agent Review Response
     needs: [ci, gemini-review, codex-review]
-    if: |
-      always() &&
-      !cancelled() &&
-      github.event_name == 'pull_request' &&
-      !github.event.pull_request.draft &&
-      !contains(github.event.pull_request.labels.*.name, 'no-auto-fix')
+    if: false  # disabled until AI review pipeline is ready
     runs-on: self-hosted
     timeout-minutes: 30
     outputs:
@@ -358,15 +351,11 @@ jobs:
             "5"
 
   # -- Agent Failure Handler -----------------------------------------------
+  # DISABLED: AI reviews will be enabled in a future iteration.
   agent-failure-handler:
     name: Agent Failure Handler
     needs: [ci, gemini-review, codex-review, agent-review-response]
-    if: |
-      failure() &&
-      github.event_name == 'pull_request' &&
-      !github.event.pull_request.draft &&
-      !contains(github.event.pull_request.labels.*.name, 'no-auto-fix') &&
-      needs.ci.result == 'failure'
+    if: false  # disabled until AI review pipeline is ready
     runs-on: self-hosted
     timeout-minutes: 30
     outputs:
