@@ -20,14 +20,6 @@ itk-protocol = { path = "../../../core/itk-protocol" }
 itk-shmem = { path = "../../../core/itk-shmem" }
 itk-ipc = { path = "../../../core/itk-ipc" }
 
-# Windows platform APIs
-[target.'cfg(windows)'.dependencies]
-windows = { version = "0.58", features = [
-    "Win32_Foundation",
-    "Win32_UI_WindowsAndMessaging",
-    "Win32_UI_Input_KeyboardAndMouse",
-] }
-
 # GUI
 egui = "0.28"
 egui-wgpu = "0.28"
@@ -57,6 +49,14 @@ raw-window-handle = "0.6"
 
 # CLI
 clap = { version = "4", features = ["derive"] }
+
+# Windows platform APIs
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+] }
 
 [lints]
 workspace = true

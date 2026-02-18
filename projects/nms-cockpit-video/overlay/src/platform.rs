@@ -2,7 +2,10 @@
 //!
 //! This module handles Windows-specific window attributes for overlay behavior.
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
+#[cfg(windows)]
+use anyhow::anyhow;
+#[cfg(windows)]
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 #[cfg(windows)]

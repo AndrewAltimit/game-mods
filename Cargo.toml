@@ -21,6 +21,22 @@ members = [
     # Development tools
     "tools/mem-scanner",
 ]
+# Windows-only crates excluded from default builds (require nightly + Windows).
+# Build explicitly with: cargo build -p nms-cockpit-injector -p nms-video-launcher -p itk-native-dll
+default-members = [
+    "core/itk-shmem",
+    "core/itk-ipc",
+    "core/itk-protocol",
+    "core/itk-sync",
+    "core/itk-video",
+    "core/itk-net",
+    "daemon",
+    "overlay",
+    "injectors/linux/ld-preload",
+    "projects/nms-cockpit-video/daemon",
+    "projects/nms-cockpit-video/overlay",
+    "tools/mem-scanner",
+]
 # MCP tools have their own workspace (mcp_core_rust) -- exclude from root
 exclude = [
     "tools/mcp/mcp_core_rust",
