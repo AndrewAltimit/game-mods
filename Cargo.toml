@@ -21,6 +21,11 @@ members = [
     # Development tools
     "tools/mem-scanner",
 ]
+# MCP tools have their own workspace (mcp_core_rust) -- exclude from root
+exclude = [
+    "tools/mcp/mcp_core_rust",
+    "tools/mcp/mcp_memory_explorer",
+]
 
 [workspace.package]
 version = "0.1.0"
