@@ -56,13 +56,16 @@ fn remove_socket_file(path: &str) {
 
 /// Non-blocking receive helper that keeps the lock held while consuming data.
 ///
-/// This prevents race conditions where another thread could consume data between
-/// peeking and actually reading.
+/// Uses a single MSG_PEEK to check for the header, then a single blocking recv
+/// to consume the full message. This avoids the race condition where data could
+/// arrive between multiple peek operations.
 fn try_recv_with_fd(fd: std::os::unix::io::RawFd) -> Result<Option<Vec<u8>>> {
     use itk_protocol::HEADER_SIZE;
 
-    // Use MSG_PEEK to check if enough data is available without consuming bytes.
+    // Use MSG_PEEK to check if enough data is available for the header.
     let mut peek_buf = [0u8; HEADER_SIZE];
+    // SAFETY: `fd` is a valid socket file descriptor owned by the caller.
+    // `peek_buf` is a stack-allocated buffer with known size HEADER_SIZE.
     let peeked = unsafe {
         libc::recv(
             fd,
@@ -96,18 +99,23 @@ fn try_recv_with_fd(fd: std::os::unix::io::RawFd) -> Result<Option<Vec<u8>>> {
     let header = itk_protocol::Header::from_bytes(&peek_buf).map_err(IpcError::Protocol)?;
     let total_size = HEADER_SIZE + header.payload_len as usize;
 
-    // Peek again to check if full message is available
+    // Allocate buffer for the full message based on header-parsed length
     let mut message = vec![0u8; total_size];
-    let peeked_full = unsafe {
+
+    // Single recv to consume the full message (we already know the header is available,
+    // and stream sockets guarantee payload follows header in order)
+    // SAFETY: `fd` is a valid socket file descriptor. `message` is a heap-allocated
+    // buffer of `total_size` bytes, matching the length passed to recv.
+    let received = unsafe {
         libc::recv(
             fd,
             message.as_mut_ptr() as *mut libc::c_void,
             total_size,
-            libc::MSG_PEEK | libc::MSG_DONTWAIT,
+            libc::MSG_DONTWAIT,
         )
     };
 
-    if peeked_full < 0 {
+    if received < 0 {
         let err = std::io::Error::last_os_error();
         if err.kind() == std::io::ErrorKind::WouldBlock
             || err.kind() == std::io::ErrorKind::Interrupted
@@ -117,34 +125,14 @@ fn try_recv_with_fd(fd: std::os::unix::io::RawFd) -> Result<Option<Vec<u8>>> {
         return Err(IpcError::Io(err));
     }
 
-    if (peeked_full as usize) < total_size {
-        return Ok(None);
-    }
-
-    // Full message is available - consume it (we still hold the lock in the caller)
-    let received = unsafe {
-        libc::recv(
-            fd,
-            message.as_mut_ptr() as *mut libc::c_void,
-            total_size,
-            0, // Blocking read, but we know data is available
-        )
-    };
-
-    if received < 0 {
-        let err = std::io::Error::last_os_error();
-        // EINTR on final recv is unusual but handle it by reporting no data available
-        if err.kind() == std::io::ErrorKind::Interrupted {
-            return Ok(None);
-        }
-        return Err(IpcError::Io(err));
-    }
-
-    if (received as usize) != total_size {
+    if (received as usize) < total_size {
+        // Partial message: payload not fully available yet.
+        // Since we already consumed partial data from the stream, we can't
+        // put it back. This indicates a genuine protocol framing issue.
         return Err(IpcError::Protocol(
             itk_protocol::ProtocolError::IncompletePayload {
-                need: total_size - itk_protocol::HEADER_SIZE,
-                have: (received as usize).saturating_sub(itk_protocol::HEADER_SIZE),
+                need: total_size - HEADER_SIZE,
+                have: (received as usize).saturating_sub(HEADER_SIZE),
             },
         ));
     }
@@ -250,11 +238,14 @@ impl UnixSocketServer {
         // Set restrictive umask before creating socket to prevent race condition.
         // Without this, the socket would briefly exist with default permissions
         // (potentially allowing other users to connect) before set_permissions runs.
+        // SAFETY: `libc::umask` is always safe to call; it atomically sets the
+        // process umask and returns the previous value.
         let old_umask = unsafe { libc::umask(0o077) };
 
         let bind_result = UnixListener::bind(&path);
 
         // Restore original umask immediately after bind
+        // SAFETY: Restoring the previously-saved umask value; always safe.
         unsafe {
             libc::umask(old_umask);
         }

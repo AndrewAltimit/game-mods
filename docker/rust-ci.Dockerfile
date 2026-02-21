@@ -30,7 +30,7 @@ RUN rustup component add rustfmt clippy
 
 # Install cargo-deny for license/advisory checks
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    cargo install cargo-deny --locked 2>/dev/null || true
+    cargo install cargo-deny --locked
 
 # Non-root user (overridden by docker-compose USER_ID/GROUP_ID)
 RUN useradd -m -u 1000 ciuser \

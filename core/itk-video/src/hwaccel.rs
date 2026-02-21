@@ -30,6 +30,8 @@ impl HwDeviceContext {
     /// Returns `None` if D3D11VA is not available on this system.
     /// This is expected on systems without a GPU or with incompatible drivers.
     pub fn create_d3d11va() -> Option<Self> {
+        // SAFETY: `av_hwdevice_ctx_create` is called with valid out-pointer and
+        // enum discriminant. Null device/options pointers are permitted by ffmpeg API.
         unsafe {
             let mut device_ctx: *mut ffi::AVBufferRef = ptr::null_mut();
             let ret = ffi::av_hwdevice_ctx_create(
@@ -58,6 +60,8 @@ impl HwDeviceContext {
     /// # Safety
     /// The caller must ensure `self` contains a valid device context pointer.
     pub unsafe fn new_ref(&self) -> *mut ffi::AVBufferRef {
+        // SAFETY: `self.device_ctx` is valid and non-null (guaranteed by constructor).
+        // `av_buffer_ref` creates a new reference to the same underlying buffer.
         unsafe { ffi::av_buffer_ref(self.device_ctx) }
     }
 
@@ -69,6 +73,8 @@ impl HwDeviceContext {
 
 impl Drop for HwDeviceContext {
     fn drop(&mut self) {
+        // SAFETY: `device_ctx` is either null (checked) or a valid AVBufferRef
+        // allocated by `av_hwdevice_ctx_create`. `av_buffer_unref` frees it.
         unsafe {
             if !self.device_ctx.is_null() {
                 ffi::av_buffer_unref(&mut self.device_ctx);
@@ -93,7 +99,7 @@ pub unsafe fn transfer_hw_frame_if_needed(frame: *mut ffi::AVFrame) -> bool {
         return false;
     }
 
-    // Safety: all operations below involve FFI calls and raw pointer derefs
+    // SAFETY: All operations below involve FFI calls and raw pointer derefs
     // that require unsafe. The caller guarantees `frame` is valid and non-null.
     unsafe {
         let format = (*frame).format;

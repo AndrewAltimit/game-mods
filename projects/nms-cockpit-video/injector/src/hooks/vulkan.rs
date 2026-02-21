@@ -50,8 +50,8 @@ static PRESENT_QUEUE: OnceCell<vk::Queue> = OnceCell::new();
 /// Queue family index (captured from device creation).
 static QUEUE_FAMILY_INDEX: AtomicU64 = AtomicU64::new(0);
 
-/// Current swapchain handle.
-static SWAPCHAIN: OnceCell<vk::SwapchainKHR> = OnceCell::new();
+/// Current swapchain handle (updated on recreation).
+static SWAPCHAIN: Mutex<Option<vk::SwapchainKHR>> = Mutex::new(None);
 
 /// Cached ash::Device dispatch table (avoids per-frame function pointer resolution).
 static ASH_DEVICE: OnceCell<ash::Device> = OnceCell::new();
@@ -259,8 +259,10 @@ fn hooked_create_swapchain(
         SWAPCHAIN_FORMAT.store(format.as_raw() as u64, Ordering::Relaxed);
 
         let sc = unsafe { *swapchain };
-        // Store swapchain (first one only for now)
-        let _ = SWAPCHAIN.set(sc);
+        // Update swapchain handle (supports recreation)
+        if let Ok(mut guard) = SWAPCHAIN.lock() {
+            *guard = Some(sc);
+        }
 
         vlog!(
             "Swapchain created: {}x{} format={:?} handle={:?}",
@@ -485,7 +487,9 @@ unsafe extern "system" fn icd_hooked_create_swapchain(
         SWAPCHAIN_FORMAT.store(format.as_raw() as u64, Ordering::Relaxed);
 
         let sc = *swapchain;
-        let _ = SWAPCHAIN.set(sc);
+        if let Ok(mut guard) = SWAPCHAIN.lock() {
+            *guard = Some(sc);
+        }
 
         vlog!(
             "Swapchain created (ICD hook): {}x{} format={:?} handle={:?}",

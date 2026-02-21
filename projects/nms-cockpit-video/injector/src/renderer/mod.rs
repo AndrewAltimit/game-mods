@@ -233,7 +233,7 @@ impl VulkanRenderer {
 
         // Wait for previous use of this frame's resources
         self.device
-            .wait_for_fences(&[frame.fence], true, u64::MAX)
+            .wait_for_fences(&[frame.fence], true, 1_000_000_000)
             .map_err(|e| format!("Wait fence failed: {:?}", e))?;
         self.device
             .reset_fences(&[frame.fence])
@@ -392,7 +392,7 @@ impl VulkanRenderer {
 
         // Wait for our rendering to complete before the game presents
         self.device
-            .wait_for_fences(&[frame.fence], true, u64::MAX)
+            .wait_for_fences(&[frame.fence], true, 1_000_000_000)
             .map_err(|e| format!("Wait after submit failed: {:?}", e))?;
 
         Ok(())
@@ -426,7 +426,7 @@ impl VulkanRenderer {
 
         // Wait for previous use of this cached fence
         self.device
-            .wait_for_fences(&[fence], true, u64::MAX)
+            .wait_for_fences(&[fence], true, 1_000_000_000)
             .map_err(|e| format!("VR fence wait failed: {:?}", e))?;
         self.device
             .reset_fences(&[fence])
@@ -573,7 +573,7 @@ impl VulkanRenderer {
             .map_err(|e| format!("VR queue submit failed: {:?}", e))?;
 
         self.device
-            .wait_for_fences(&[fence], true, u64::MAX)
+            .wait_for_fences(&[fence], true, 1_000_000_000)
             .map_err(|e| format!("VR fence wait failed: {:?}", e))?;
 
         Ok(())

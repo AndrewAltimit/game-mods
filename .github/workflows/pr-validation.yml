@@ -40,13 +40,9 @@ jobs:
     steps:
       - name: Pre-checkout cleanup
         run: |
-          for item in outputs target .git/index.lock; do
-            if [ -d "$item" ] || [ -f "$item" ]; then
-              docker run --rm -v "$(pwd):/workspace" busybox:1.36.1 sh -c \
-                "rm -rf /workspace/$item" 2>/dev/null || \
-                sudo rm -rf "$item" 2>/dev/null || true
-            fi
-          done
+          docker run --rm -v "$(pwd):/workspace" busybox:1.36.1 sh -c \
+            "rm -rf /workspace/outputs /workspace/.git/index.lock" 2>/dev/null || \
+            sudo rm -rf outputs .git/index.lock 2>/dev/null || true
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -71,7 +67,7 @@ jobs:
 
       # -- Tests -------------------------------------------------------------
       - name: Test
-        run: docker compose --profile ci run --rm rust-ci cargo test
+        run: docker compose --profile ci run --rm rust-ci cargo test -- --test-threads=4
 
       # -- Build -------------------------------------------------------------
       - name: Build

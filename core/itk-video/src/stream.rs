@@ -34,10 +34,13 @@ impl StreamSource {
     }
 
     /// Check if this source is a YouTube URL.
+    ///
+    /// Validates using host matching rather than substring search to avoid
+    /// false positives (e.g., a URL containing "youtube.com" in the path).
     pub fn is_youtube(&self) -> bool {
         match self {
             StreamSource::Url(url) | StreamSource::UrlWithAudio { video: url, .. } => {
-                url.contains("youtube.com") || url.contains("youtu.be")
+                is_youtube_url(url)
             },
             StreamSource::File(_) => false,
         }
@@ -58,6 +61,31 @@ impl StreamSource {
             _ => None,
         }
     }
+}
+
+/// Check if a URL string is a YouTube URL by parsing the host.
+///
+/// Matches `youtube.com`, `www.youtube.com`, `m.youtube.com`, and `youtu.be`.
+fn is_youtube_url(url: &str) -> bool {
+    // Extract host from URL: skip scheme, take up to first '/' or end
+    let without_scheme = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url);
+
+    let host = without_scheme
+        .split('/')
+        .next()
+        .unwrap_or("")
+        .split(':')
+        .next()
+        .unwrap_or("");
+
+    host == "youtube.com"
+        || host == "www.youtube.com"
+        || host == "m.youtube.com"
+        || host == "youtu.be"
+        || host == "www.youtu.be"
 }
 
 impl From<PathBuf> for StreamSource {
@@ -107,7 +135,10 @@ mod tests {
     fn test_is_youtube() {
         assert!(StreamSource::from_string("https://www.youtube.com/watch?v=abc").is_youtube());
         assert!(StreamSource::from_string("https://youtu.be/abc").is_youtube());
+        assert!(StreamSource::from_string("https://m.youtube.com/watch?v=abc").is_youtube());
         assert!(!StreamSource::from_string("https://example.com/video.mp4").is_youtube());
         assert!(!StreamSource::from_string("/path/to/video.mp4").is_youtube());
+        // False positive case: "youtube.com" in path should NOT match
+        assert!(!StreamSource::from_string("https://example.com/youtube.com/video").is_youtube());
     }
 }

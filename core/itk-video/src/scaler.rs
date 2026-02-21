@@ -25,19 +25,26 @@ pub struct FrameScaler {
 
 impl FrameScaler {
     /// Create a new scaler with the default 720p output resolution.
-    pub fn new() -> Self {
+    pub fn new() -> VideoResult<Self> {
         Self::with_size(DEFAULT_WIDTH, DEFAULT_HEIGHT)
     }
 
     /// Create a new scaler with a custom output resolution.
-    pub fn with_size(width: u32, height: u32) -> Self {
-        let buffer_size = (width as usize) * (height as usize) * BYTES_PER_PIXEL;
+    pub fn with_size(width: u32, height: u32) -> VideoResult<Self> {
+        let buffer_size = (width as usize)
+            .checked_mul(height as usize)
+            .and_then(|s| s.checked_mul(BYTES_PER_PIXEL))
+            .ok_or_else(|| {
+                VideoError::InvalidFrame(format!(
+                    "frame size overflow: {width}x{height}x{BYTES_PER_PIXEL}"
+                ))
+            })?;
         let mut output_frame = VideoFrame::empty();
         output_frame.set_format(Pixel::RGBA);
         output_frame.set_width(width);
         output_frame.set_height(height);
 
-        Self {
+        Ok(Self {
             context: None,
             output_width: width,
             output_height: height,
@@ -47,7 +54,7 @@ impl FrameScaler {
             last_input_width: 0,
             last_input_height: 0,
             last_input_format: Pixel::None,
-        }
+        })
     }
 
     /// Get the output width.
@@ -93,10 +100,15 @@ impl FrameScaler {
             self.last_input_format = input_format;
         }
 
-        let ctx = self.context.as_mut().unwrap();
+        let ctx = self
+            .context
+            .as_mut()
+            .ok_or_else(|| VideoError::ScaleError("scaling context not initialized".to_string()))?;
 
         // Allocate output frame buffer if needed
         if !self.frame_allocated {
+            // SAFETY: `output_frame` is a valid AVFrame with format, width, and height
+            // set. `av_frame_get_buffer` allocates data planes for these parameters.
             unsafe {
                 let ret = ffmpeg_next::ffi::av_frame_get_buffer(
                     self.output_frame.as_mut_ptr(),
@@ -140,14 +152,20 @@ impl FrameScaler {
     }
 
     /// Get the expected output buffer size in bytes.
+    ///
+    /// Panics on overflow (dimensions are validated in `with_size`).
     pub fn buffer_size(&self) -> usize {
-        (self.output_width as usize) * (self.output_height as usize) * BYTES_PER_PIXEL
+        (self.output_width as usize)
+            .checked_mul(self.output_height as usize)
+            .and_then(|s| s.checked_mul(BYTES_PER_PIXEL))
+            .expect("buffer_size overflow (dimensions should have been validated)")
     }
 }
 
 impl Default for FrameScaler {
     fn default() -> Self {
-        Self::new()
+        // Default 720p dimensions are always valid; unwrap is safe
+        Self::new().expect("default 720p scaler dimensions should never overflow")
     }
 }
 
@@ -157,7 +175,7 @@ mod tests {
 
     #[test]
     fn test_scaler_dimensions() {
-        let scaler = FrameScaler::new();
+        let scaler = FrameScaler::new().unwrap();
         assert_eq!(scaler.width(), DEFAULT_WIDTH);
         assert_eq!(scaler.height(), DEFAULT_HEIGHT);
         assert_eq!(scaler.buffer_size(), 1280 * 720 * 4);
@@ -165,9 +183,15 @@ mod tests {
 
     #[test]
     fn test_custom_dimensions() {
-        let scaler = FrameScaler::with_size(640, 480);
+        let scaler = FrameScaler::with_size(640, 480).unwrap();
         assert_eq!(scaler.width(), 640);
         assert_eq!(scaler.height(), 480);
         assert_eq!(scaler.buffer_size(), 640 * 480 * 4);
+    }
+
+    #[test]
+    fn test_overflow_dimensions() {
+        let result = FrameScaler::with_size(u32::MAX, u32::MAX);
+        assert!(result.is_err());
     }
 }

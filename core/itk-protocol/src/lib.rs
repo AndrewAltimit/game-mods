@@ -51,8 +51,12 @@ pub enum ProtocolError {
     #[error("payload too large: {size} bytes (max {max})")]
     PayloadTooLarge { size: usize, max: usize },
 
-    #[error("CRC mismatch: expected {expected:#x}, got {got:#x}")]
-    CrcMismatch { expected: u32, got: u32 },
+    #[error("CRC mismatch for {msg_type:?}: expected {expected:#x}, got {got:#x}")]
+    CrcMismatch {
+        msg_type: MessageType,
+        expected: u32,
+        got: u32,
+    },
 
     #[error("unknown message type: {0}")]
     UnknownMessageType(u32),
@@ -554,6 +558,12 @@ impl Validate for ScreenRect {
 impl Validate for WindowState {
     fn validate(&self) -> Result<(), ProtocolError> {
         validate_finite_f32("dpi_scale", self.dpi_scale)?;
+        if !(0.1..=10.0).contains(&self.dpi_scale) {
+            return Err(ProtocolError::ValidationFailed {
+                field: "dpi_scale".to_string(),
+                reason: format!("value {} out of valid range 0.1..=10.0", self.dpi_scale),
+            });
+        }
         Ok(())
     }
 }
@@ -606,6 +616,12 @@ impl Validate for SyncState {
     fn validate(&self) -> Result<(), ProtocolError> {
         validate_string("content_id", &self.content_id)?;
         validate_finite_f64("playback_rate", self.playback_rate)?;
+        if self.playback_rate <= 0.0 {
+            return Err(ProtocolError::ValidationFailed {
+                field: "playback_rate".to_string(),
+                reason: format!("value {} must be positive (non-zero)", self.playback_rate),
+            });
+        }
         Ok(())
     }
 }
@@ -629,6 +645,12 @@ impl Validate for VideoState {
     fn validate(&self) -> Result<(), ProtocolError> {
         validate_string("content_id", &self.content_id)?;
         validate_finite_f64("playback_rate", self.playback_rate)?;
+        if self.playback_rate <= 0.0 {
+            return Err(ProtocolError::ValidationFailed {
+                field: "playback_rate".to_string(),
+                reason: format!("value {} must be positive (non-zero)", self.playback_rate),
+            });
+        }
         validate_finite_f32("volume", self.volume)?;
         Ok(())
     }
@@ -749,6 +771,7 @@ pub fn decode<T: for<'de> Deserialize<'de>>(
     let computed_crc = crc32fast::hash(payload_bytes);
     if computed_crc != header.crc32 {
         return Err(ProtocolError::CrcMismatch {
+            msg_type: header.msg_type,
             expected: header.crc32,
             got: computed_crc,
         });
@@ -1050,6 +1073,259 @@ mod tests {
         }
 
         let result: Result<(_, ScreenRect), _> = decode(&encoded);
-        assert!(matches!(result, Err(ProtocolError::CrcMismatch { .. })));
+        match &result {
+            Err(ProtocolError::CrcMismatch { msg_type, .. }) => {
+                assert_eq!(*msg_type, MessageType::ScreenRect);
+            },
+            other => panic!("expected CrcMismatch, got {other:?}"),
+        }
+    }
+
+    // =========================================================================
+    // Edge case tests (Phase 6)
+    // =========================================================================
+
+    #[test]
+    fn test_truncated_header() {
+        // Less than HEADER_SIZE bytes
+        let bytes = [0u8; HEADER_SIZE - 1];
+        let result = Header::from_bytes(&bytes);
+        assert!(matches!(
+            result,
+            Err(ProtocolError::IncompleteHeader { need: 20, have: 19 })
+        ));
+    }
+
+    #[test]
+    fn test_empty_bytes() {
+        let result = Header::from_bytes(&[]);
+        assert!(matches!(
+            result,
+            Err(ProtocolError::IncompleteHeader { need: 20, have: 0 })
+        ));
+    }
+
+    #[test]
+    fn test_wrong_version() {
+        let header = Header {
+            magic: MAGIC,
+            version: 99,
+            msg_type: MessageType::Ping,
+            payload_len: 0,
+            crc32: 0,
+        };
+        let bytes = header.to_bytes();
+        // Manually write version since Header::to_bytes uses the field directly
+        let result = Header::from_bytes(&bytes);
+        assert!(matches!(result, Err(ProtocolError::UnsupportedVersion(99))));
+    }
+
+    #[test]
+    fn test_unknown_message_type() {
+        let mut bytes = [0u8; HEADER_SIZE];
+        bytes[0..4].copy_from_slice(&MAGIC);
+        bytes[4..8].copy_from_slice(&VERSION.to_le_bytes());
+        bytes[8..12].copy_from_slice(&999u32.to_le_bytes()); // invalid msg type
+        let result = Header::from_bytes(&bytes);
+        assert!(matches!(
+            result,
+            Err(ProtocolError::UnknownMessageType(999))
+        ));
+    }
+
+    #[test]
+    fn test_payload_too_large() {
+        let mut bytes = [0u8; HEADER_SIZE];
+        bytes[0..4].copy_from_slice(&MAGIC);
+        bytes[4..8].copy_from_slice(&VERSION.to_le_bytes());
+        bytes[8..12].copy_from_slice(&0u32.to_le_bytes()); // Ping
+        let oversized = (MAX_PAYLOAD_SIZE as u32) + 1;
+        bytes[12..16].copy_from_slice(&oversized.to_le_bytes());
+        let result = Header::from_bytes(&bytes);
+        assert!(matches!(result, Err(ProtocolError::PayloadTooLarge { .. })));
+    }
+
+    #[test]
+    fn test_incomplete_payload() {
+        let rect = ScreenRect {
+            x: 1.0,
+            y: 2.0,
+            width: 3.0,
+            height: 4.0,
+            rotation: 0.0,
+            visible: true,
+        };
+        let encoded = encode(MessageType::ScreenRect, &rect).unwrap();
+        // Truncate the payload
+        let truncated = &encoded[..HEADER_SIZE + 1];
+        let result: Result<(_, ScreenRect), _> = decode(truncated);
+        assert!(matches!(
+            result,
+            Err(ProtocolError::IncompletePayload { .. })
+        ));
+    }
+
+    #[test]
+    fn test_all_message_type_roundtrip() {
+        // Ensure every MessageType variant can be converted from its u32 value
+        let types = [
+            (0, MessageType::Ping),
+            (1, MessageType::Pong),
+            (10, MessageType::ScreenRect),
+            (11, MessageType::WindowState),
+            (12, MessageType::OverlayUpdate),
+            (20, MessageType::StateSnapshot),
+            (21, MessageType::StateEvent),
+            (22, MessageType::StateQuery),
+            (23, MessageType::StateResponse),
+            (30, MessageType::SyncState),
+            (31, MessageType::ClockPing),
+            (32, MessageType::ClockPong),
+            (40, MessageType::VideoLoad),
+            (41, MessageType::VideoPlay),
+            (42, MessageType::VideoPause),
+            (43, MessageType::VideoSeek),
+            (44, MessageType::VideoState),
+            (45, MessageType::VideoMetadata),
+            (46, MessageType::VideoError),
+            (255, MessageType::Error),
+        ];
+
+        for (raw, expected) in types {
+            let result = MessageType::try_from(raw).unwrap();
+            assert_eq!(result, expected, "MessageType mismatch for raw value {raw}");
+            assert_eq!(result as u32, raw);
+        }
+    }
+
+    #[test]
+    fn test_validate_dpi_scale_boundary_values() {
+        // Lower boundary
+        let ws = WindowState {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 100,
+            dpi_scale: 0.1,
+            is_fullscreen: false,
+            is_borderless: false,
+            is_focused: true,
+        };
+        assert!(ws.validate().is_ok());
+
+        // Upper boundary
+        let ws = WindowState {
+            dpi_scale: 10.0,
+            ..ws
+        };
+        assert!(ws.validate().is_ok());
+
+        // Just below lower boundary
+        let ws = WindowState {
+            dpi_scale: 0.09,
+            ..ws
+        };
+        assert!(ws.validate().is_err());
+
+        // Just above upper boundary
+        let ws = WindowState {
+            dpi_scale: 10.1,
+            ..ws
+        };
+        assert!(ws.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_zero_playback_rate_rejected() {
+        let state = VideoState {
+            content_id: "abc".to_string(),
+            position_ms: 0,
+            duration_ms: 0,
+            is_playing: false,
+            is_buffering: false,
+            playback_rate: 0.0,
+            volume: 0.5,
+        };
+        let encoded = encode(MessageType::VideoState, &state).unwrap();
+        let result: Result<(_, VideoState), _> = decode_validated(&encoded);
+        assert!(matches!(
+            result,
+            Err(ProtocolError::ValidationFailed { .. })
+        ));
+    }
+
+    #[test]
+    fn test_validate_negative_playback_rate_rejected() {
+        let sync = SyncState {
+            content_id: "abc".to_string(),
+            position_at_ref_ms: 0,
+            ref_wallclock_ms: 0,
+            is_playing: true,
+            playback_rate: -1.0,
+        };
+        let encoded = encode(MessageType::SyncState, &sync).unwrap();
+        let result: Result<(_, SyncState), _> = decode_validated(&encoded);
+        assert!(matches!(
+            result,
+            Err(ProtocolError::ValidationFailed { .. })
+        ));
+    }
+
+    #[test]
+    fn test_encode_decode_all_video_messages() {
+        // VideoPlay
+        let play = VideoPlay {
+            from_position_ms: Some(1000),
+        };
+        let enc = encode(MessageType::VideoPlay, &play).unwrap();
+        let (mt, dec): (_, VideoPlay) = decode(&enc).unwrap();
+        assert_eq!(mt, MessageType::VideoPlay);
+        assert_eq!(dec.from_position_ms, Some(1000));
+
+        // VideoPause
+        let pause = VideoPause {};
+        let enc = encode(MessageType::VideoPause, &pause).unwrap();
+        let (mt, _dec): (_, VideoPause) = decode(&enc).unwrap();
+        assert_eq!(mt, MessageType::VideoPause);
+
+        // VideoSeek
+        let seek = VideoSeek { position_ms: 42000 };
+        let enc = encode(MessageType::VideoSeek, &seek).unwrap();
+        let (mt, dec): (_, VideoSeek) = decode(&enc).unwrap();
+        assert_eq!(mt, MessageType::VideoSeek);
+        assert_eq!(dec.position_ms, 42000);
+
+        // VideoMetadata
+        let meta = VideoMetadata {
+            content_id: "test".to_string(),
+            width: 1920,
+            height: 1080,
+            duration_ms: 60000,
+            fps: 30.0,
+            codec: "h264".to_string(),
+            is_live: false,
+            title: Some("Test Video".to_string()),
+        };
+        let enc = encode(MessageType::VideoMetadata, &meta).unwrap();
+        let (mt, dec): (_, VideoMetadata) = decode_validated(&enc).unwrap();
+        assert_eq!(mt, MessageType::VideoMetadata);
+        assert_eq!(dec.width, 1920);
+        assert_eq!(dec.title, Some("Test Video".to_string()));
+    }
+
+    #[test]
+    fn test_decode_header_only() {
+        let rect = ScreenRect {
+            x: 1.0,
+            y: 2.0,
+            width: 3.0,
+            height: 4.0,
+            rotation: 0.0,
+            visible: true,
+        };
+        let encoded = encode(MessageType::ScreenRect, &rect).unwrap();
+        let header = decode_header(&encoded).unwrap();
+        assert_eq!(header.msg_type, MessageType::ScreenRect);
+        assert!(header.payload_len > 0);
     }
 }

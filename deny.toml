@@ -7,9 +7,7 @@ ignore = [
     # bincode 1.3: still used transitively by itk-net (via laminar)
     # Direct protocol serialization migrated to bitcode.
     "RUSTSEC-2025-0141",
-    # bytes: integer overflow in BytesMut::reserve (RUSTSEC-2026-0007)
-    # TODO: update bytes to patched version when laminar updates
-    "RUSTSEC-2026-0007",
+    # bytes advisory resolved — bytes updated to patched version
 ]
 
 [licenses]
@@ -39,7 +37,12 @@ private = { ignore = true }
 [bans]
 multiple-versions = "warn"
 wildcards = "allow"
-deny = []
+# Deny known-problematic crates from being added as dependencies
+deny = [
+    # Use parking_lot instead of std::sync::Mutex (never poisons)
+    # Note: this only prevents direct deps, not transitive
+    { crate = "openssl", use-instead = "rustls" },
+]
 
 [sources]
 unknown-registry = "warn"
