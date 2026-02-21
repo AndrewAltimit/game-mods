@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Pre-commit hook for game-mods workspace
+# Install: git config core.hooksPath .githooks
+#
+# Runs the same checks as CI (fmt, clippy, test) on buildable crates.
+# Skips crates requiring system libs not available locally (ffmpeg, vulkan).
+
+set -euo pipefail
+
+# Colors (if terminal supports them)
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+NC='\033[0m'
+
+# Crates that can always be built (no system lib deps)
+CORE_CRATES=(
+    itk-shmem
+    itk-ipc
+    itk-protocol
+    itk-sync
+    itk-net
+)
+
+echo -e "${YELLOW}pre-commit: checking formatting...${NC}"
+if ! cargo fmt --all -- --check 2>/dev/null; then
+    echo -e "${RED}FAILED:${NC} cargo fmt --all -- --check"
+    echo "Run 'cargo fmt --all' to fix."
+    exit 1
+fi
+echo -e "${GREEN}OK${NC}"
+
+# Build clippy args: -p crate1 -p crate2 ...
+CLIPPY_ARGS=()
+for crate in "${CORE_CRATES[@]}"; do
+    CLIPPY_ARGS+=(-p "$crate")
+done
+
+echo -e "${YELLOW}pre-commit: running clippy (core crates)...${NC}"
+if ! cargo clippy "${CLIPPY_ARGS[@]}" --all-targets -- -D warnings 2>/dev/null; then
+    echo -e "${RED}FAILED:${NC} cargo clippy"
+    exit 1
+fi
+echo -e "${GREEN}OK${NC}"
+
+echo -e "${YELLOW}pre-commit: running tests (core crates)...${NC}"
+if ! cargo test "${CLIPPY_ARGS[@]}" 2>/dev/null; then
+    echo -e "${RED}FAILED:${NC} cargo test"
+    exit 1
+fi
+echo -e "${GREEN}OK${NC}"
+
+echo -e "${GREEN}All pre-commit checks passed.${NC}"

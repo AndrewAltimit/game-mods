@@ -120,10 +120,10 @@ fn validate_video_source(source: &str) -> Result<()> {
 
     // Allow absolute and relative local file paths (no URI scheme)
     // Reject anything that looks like a URI scheme (contains "://" early)
-    if let Some(colon_pos) = source.find("://") {
-        if colon_pos < 20 {
-            bail!("Unsupported video source scheme: {}", &source[..colon_pos]);
-        }
+    if let Some(colon_pos) = source.find("://")
+        && colon_pos < 20
+    {
+        bail!("Unsupported video source scheme: {}", &source[..colon_pos]);
     }
 
     Ok(())
