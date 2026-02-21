@@ -17,6 +17,9 @@ use std::process::{self, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use itk_ipc::IpcChannel;
+use itk_protocol::{MessageType, decode_header, encode};
+
 use windows::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
 use windows::Win32::System::Diagnostics::Debug::WriteProcessMemory;
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
@@ -44,6 +47,12 @@ const POLL_INTERVAL: Duration = Duration::from_millis(500);
 /// Must be short - the DLL waits internally for vulkan-1.dll, and hooks must be
 /// installed BEFORE NMS calls vkCreateDevice (which sets up ICD hooks).
 const INJECT_DELAY: Duration = Duration::from_millis(500);
+
+/// How long to wait for the daemon to respond to a health-check Ping.
+const DAEMON_READY_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// IPC channel name for daemon client connections (must match daemon default).
+const DAEMON_CLIENT_CHANNEL: &str = "nms_cockpit_client";
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -105,6 +114,20 @@ fn main() {
 
     // Start the daemon as a separate process
     let daemon_pid = start_daemon(&dll_clean);
+
+    // Wait for daemon to be ready before proceeding
+    if daemon_pid.is_some() {
+        if wait_for_daemon_ready() {
+            println!("Daemon is ready.");
+        } else {
+            println!(
+                "Warning: daemon did not respond to health check within {:?}",
+                DAEMON_READY_TIMEOUT
+            );
+            println!("Proceeding anyway (daemon may still be starting)...");
+        }
+        println!();
+    }
 
     // Launch NMS
     println!("Launching NMS with --disable-eac...");
@@ -174,6 +197,50 @@ fn main() {
         kill_process(dpid);
     }
     println!("Done.");
+}
+
+/// Wait for the daemon to respond to a health-check Ping.
+///
+/// Retries connection attempts until the daemon responds with Pong or the
+/// timeout expires. Returns true if the daemon is confirmed ready.
+fn wait_for_daemon_ready() -> bool {
+    println!("Checking daemon health...");
+    let start = Instant::now();
+
+    while start.elapsed() < DAEMON_READY_TIMEOUT {
+        // Try to connect to the daemon's client IPC channel
+        match itk_ipc::connect(DAEMON_CLIENT_CHANNEL) {
+            Ok(channel) => {
+                // Send a Ping
+                let ping = match encode(MessageType::Ping, &()) {
+                    Ok(data) => data,
+                    Err(_) => return false,
+                };
+                if channel.send(&ping).is_err() {
+                    thread::sleep(Duration::from_millis(250));
+                    continue;
+                }
+
+                // Wait for Pong response
+                match channel.recv() {
+                    Ok(data) => {
+                        if let Ok(header) = decode_header(&data) {
+                            if header.msg_type == MessageType::Pong {
+                                return true;
+                            }
+                        }
+                    },
+                    Err(_) => {},
+                }
+            },
+            Err(_) => {
+                // Daemon not ready yet, retry
+                thread::sleep(Duration::from_millis(250));
+            },
+        }
+    }
+
+    false
 }
 
 /// Start the video daemon as a detached background process.

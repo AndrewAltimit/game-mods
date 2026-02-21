@@ -295,3 +295,131 @@ impl SyncManager {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sync_manager_creation() {
+        let mgr = SyncManager::new("content-123".into(), true);
+        assert!(!mgr.is_playing());
+        assert_eq!(mgr.content_id(), "content-123");
+        assert_eq!(mgr.playback_rate(), 1.0);
+    }
+
+    #[test]
+    fn test_sync_manager_play_pause() {
+        let mut mgr = SyncManager::new("content".into(), true);
+
+        mgr.play();
+        assert!(mgr.is_playing());
+
+        mgr.pause();
+        assert!(!mgr.is_playing());
+    }
+
+    #[test]
+    fn test_sync_manager_seek() {
+        let mut mgr = SyncManager::new("content".into(), true);
+        mgr.play();
+
+        mgr.seek(5000);
+        // Position should be approximately 5000
+        let pos = mgr.current_position_ms();
+        assert!((4900..=5100).contains(&pos));
+    }
+
+    #[test]
+    fn test_sync_manager_load_resets_state() {
+        let mut mgr = SyncManager::new("old-content".into(), true);
+        mgr.play();
+        mgr.seek(10000);
+
+        mgr.load("new-content".into());
+        assert_eq!(mgr.content_id(), "new-content");
+        assert!(!mgr.is_playing());
+    }
+
+    #[test]
+    fn test_sync_manager_leader_role_change() {
+        let mut mgr = SyncManager::new("content".into(), false);
+        assert_eq!(mgr.playback_rate(), 1.0); // No target yet, defaults to 1.0
+
+        mgr.set_leader(true);
+        assert_eq!(mgr.playback_rate(), 1.0); // Leader always 1.0
+    }
+
+    #[test]
+    fn test_sync_manager_leader_ignores_sync_state() {
+        let mut mgr = SyncManager::new("content".into(), true);
+        mgr.play();
+
+        let external_state = SyncState {
+            content_id: "different-content".into(),
+            position_at_ref_ms: 99999,
+            ref_wallclock_ms: itk_sync::now_ms(),
+            is_playing: false,
+            playback_rate: 1.0,
+        };
+
+        mgr.receive_sync_state(external_state);
+        // Leader should ignore - content_id unchanged
+        assert_eq!(mgr.content_id(), "content");
+        assert!(mgr.is_playing());
+    }
+
+    #[test]
+    fn test_sync_manager_follower_receives_sync_state() {
+        let mut mgr = SyncManager::new("content".into(), false);
+
+        let state = SyncState {
+            content_id: "new-content".into(),
+            position_at_ref_ms: 5000,
+            ref_wallclock_ms: itk_sync::now_ms(),
+            is_playing: true,
+            playback_rate: 1.0,
+        };
+
+        mgr.receive_sync_state(state);
+        assert_eq!(mgr.content_id(), "new-content");
+        assert!(mgr.is_playing());
+    }
+
+    #[test]
+    fn test_sync_manager_leader_ignores_commands() {
+        let mut mgr = SyncManager::new("content".into(), true);
+        mgr.play();
+
+        mgr.receive_command(VideoCommand::Pause);
+        // Leader ignores commands from peers
+        assert!(mgr.is_playing());
+    }
+
+    #[test]
+    fn test_sync_manager_follower_receives_commands() {
+        let mut mgr = SyncManager::new("content".into(), false);
+
+        mgr.receive_command(VideoCommand::Play);
+        assert!(mgr.is_playing());
+
+        mgr.receive_command(VideoCommand::Pause);
+        assert!(!mgr.is_playing());
+
+        mgr.receive_command(VideoCommand::Seek { position_ms: 30000 });
+        let pos = mgr.current_position_ms();
+        assert!((29900..=30100).contains(&pos));
+
+        mgr.receive_command(VideoCommand::Load {
+            url: "new-url".into(),
+        });
+        assert_eq!(mgr.content_id(), "new-url");
+    }
+
+    #[test]
+    fn test_sync_manager_drift_leader_none() {
+        let mgr = SyncManager::new("content".into(), true);
+        assert!(mgr.drift_ms().is_none());
+        assert!(mgr.should_seek().is_none());
+    }
+}

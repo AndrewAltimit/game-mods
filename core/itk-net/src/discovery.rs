@@ -267,3 +267,61 @@ impl Discovery {
             .find(|p| p.session_id == session_id && p.is_leader)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_announce_creation_and_validation() {
+        let announce = DiscoveryAnnounce::new("test-session".into(), 7331, true, "player1".into());
+
+        assert!(announce.is_valid());
+        assert_eq!(announce.magic, DiscoveryAnnounce::MAGIC);
+        assert_eq!(announce.version, 1);
+        assert_eq!(announce.session_id, "test-session");
+        assert_eq!(announce.game_port, 7331);
+        assert!(announce.is_leader);
+        assert_eq!(announce.name, "player1");
+        assert_ne!(announce.peer_id, 0);
+    }
+
+    #[test]
+    fn test_announce_invalid_magic() {
+        let mut announce = DiscoveryAnnounce::new("test".into(), 7331, false, "p1".into());
+        announce.magic = *b"NOPE";
+        assert!(!announce.is_valid());
+    }
+
+    #[test]
+    fn test_announce_invalid_version() {
+        let mut announce = DiscoveryAnnounce::new("test".into(), 7331, false, "p1".into());
+        announce.version = 99;
+        assert!(!announce.is_valid());
+    }
+
+    #[test]
+    fn test_announce_serialization_roundtrip() {
+        let announce = DiscoveryAnnounce::new("session-abc".into(), 8080, false, "player2".into());
+
+        let bytes = bincode::serialize(&announce).unwrap();
+        let decoded: DiscoveryAnnounce = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(decoded.magic, announce.magic);
+        assert_eq!(decoded.version, announce.version);
+        assert_eq!(decoded.peer_id, announce.peer_id);
+        assert_eq!(decoded.session_id, announce.session_id);
+        assert_eq!(decoded.game_port, announce.game_port);
+        assert_eq!(decoded.is_leader, announce.is_leader);
+        assert_eq!(decoded.name, announce.name);
+    }
+
+    #[test]
+    fn test_unique_peer_ids() {
+        let a1 = DiscoveryAnnounce::new("s".into(), 1, false, "a".into());
+        // Small delay to ensure different timestamp
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        let a2 = DiscoveryAnnounce::new("s".into(), 1, false, "b".into());
+        assert_ne!(a1.peer_id, a2.peer_id);
+    }
+}

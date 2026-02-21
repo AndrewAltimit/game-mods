@@ -331,6 +331,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7"
 
 [[package]]
+name = "bitcode"
+version = "0.6.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a6ed1b54d8dc333e7be604d00fa9262f4635485ffea923647b6521a5fff045d"
+dependencies = [
+ "arrayvec",
+ "bitcode_derive",
+ "bytemuck",
+ "glam",
+ "serde",
+]
+
+[[package]]
+name = "bitcode_derive"
+version = "0.6.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "238b90427dfad9da4a9abd60f3ec1cdee6b80454bde49ed37f1781dd8e9dc7f9"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.116",
+]
+
+[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1163,6 +1187,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "glam"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34627c5158214743a374170fed714833fdf4e4b0cbcc1ea98417866a4c5d4441"
+
+[[package]]
 name = "glob"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1458,6 +1488,7 @@ dependencies = [
  "itk-protocol",
  "itk-shmem",
  "itk-sync",
+ "parking_lot",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
@@ -1474,6 +1505,7 @@ dependencies = [
  "itk-protocol",
  "libc",
  "nix",
+ "parking_lot",
  "rand",
  "thiserror 1.0.69",
  "tokio",
@@ -1541,10 +1573,11 @@ dependencies = [
 name = "itk-protocol"
 version = "0.1.0"
 dependencies = [
- "bincode",
+ "bitcode",
  "crc32fast",
  "serde",
  "thiserror 1.0.69",
+ "tracing",
 ]
 
 [[package]]
@@ -1556,6 +1589,7 @@ dependencies = [
  "loom",
  "nix",
  "thiserror 1.0.69",
+ "tracing",
  "windows 0.58.0",
 ]
 
@@ -2034,6 +2068,7 @@ dependencies = [
  "itk-shmem",
  "itk-sync",
  "itk-video",
+ "parking_lot",
  "ringbuf",
  "serde",
  "serde_json",
@@ -2047,6 +2082,8 @@ dependencies = [
 name = "nms-video-launcher"
 version = "0.1.0"
 dependencies = [
+ "itk-ipc",
+ "itk-protocol",
  "windows 0.58.0",
 ]
 

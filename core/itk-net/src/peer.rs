@@ -340,3 +340,85 @@ impl PeerManager {
         self.peers.read().len()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_peer_creation() {
+        let addr: SocketAddr = "127.0.0.1:7331".parse().unwrap();
+        let peer = Peer::new(addr);
+
+        assert_eq!(peer.addr, addr);
+        assert!(peer.name.is_none());
+        assert!(!peer.is_leader);
+        assert!(peer.latency_ms.is_none());
+        assert_eq!(peer.id(), "127.0.0.1:7331");
+    }
+
+    #[test]
+    fn test_net_message_serialization_roundtrip() {
+        let messages: Vec<NetMessage> = vec![
+            NetMessage::Ping { timestamp_ms: 42 },
+            NetMessage::Pong {
+                timestamp_ms: 42,
+                peer_time_ms: 43,
+            },
+            NetMessage::Announce {
+                name: "player1".into(),
+            },
+            NetMessage::SyncState(itk_protocol::SyncState {
+                content_id: "abc".into(),
+                position_at_ref_ms: 1000,
+                ref_wallclock_ms: 2000,
+                is_playing: true,
+                playback_rate: 1.0,
+            }),
+            NetMessage::ClockPing(itk_protocol::ClockPing {
+                sender_time_ms: 100,
+            }),
+            NetMessage::ClockPong(itk_protocol::ClockPong {
+                sender_time_ms: 100,
+                receiver_time_ms: 150,
+            }),
+            NetMessage::VideoCommand(VideoCommand::Play),
+            NetMessage::VideoCommand(VideoCommand::Pause),
+            NetMessage::VideoCommand(VideoCommand::Load {
+                url: "https://example.com".into(),
+            }),
+            NetMessage::VideoCommand(VideoCommand::Seek { position_ms: 5000 }),
+        ];
+
+        for msg in &messages {
+            let bytes = bincode::serialize(msg).unwrap();
+            let decoded: NetMessage = bincode::deserialize(&bytes).unwrap();
+            // Verify roundtrip succeeds (type discrimination)
+            let rebytes = bincode::serialize(&decoded).unwrap();
+            assert_eq!(bytes, rebytes);
+        }
+    }
+
+    #[test]
+    fn test_video_command_variants() {
+        let load = VideoCommand::Load {
+            url: "test.mp4".into(),
+        };
+        let bytes = bincode::serialize(&load).unwrap();
+        let decoded: VideoCommand = bincode::deserialize(&bytes).unwrap();
+        if let VideoCommand::Load { url } = decoded {
+            assert_eq!(url, "test.mp4");
+        } else {
+            panic!("Expected Load variant");
+        }
+
+        let seek = VideoCommand::Seek { position_ms: 42000 };
+        let bytes = bincode::serialize(&seek).unwrap();
+        let decoded: VideoCommand = bincode::deserialize(&bytes).unwrap();
+        if let VideoCommand::Seek { position_ms } = decoded {
+            assert_eq!(position_ms, 42000);
+        } else {
+            panic!("Expected Seek variant");
+        }
+    }
+}

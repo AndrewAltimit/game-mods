@@ -288,6 +288,93 @@ mod integration_tests {
 
     #[test]
     #[cfg(unix)]
+    fn test_unix_socket_try_recv_no_data() {
+        let channel_name = test_channel_name();
+        let channel_name_client = channel_name.clone();
+
+        let _server_handle = thread::spawn(move || {
+            let server = listen(&channel_name).expect("Failed to create server");
+            let _conn = server.accept().expect("Failed to accept");
+            // Don't send anything, just hold the connection
+            thread::sleep(Duration::from_secs(2));
+        });
+
+        let client = connect_with_retry(&channel_name_client, Duration::from_secs(2));
+
+        // try_recv should return None when no data is available
+        let result = client.try_recv().unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_unix_socket_bidirectional() {
+        let channel_name = test_channel_name();
+        let channel_name_client = channel_name.clone();
+
+        let server_handle = thread::spawn(move || {
+            let server = listen(&channel_name).expect("Failed to create server");
+            let conn = server.accept().expect("Failed to accept");
+
+            // Server receives ping
+            let msg = conn.recv().expect("Failed to receive");
+            let (msg_type, _): (MessageType, ()) = decode(&msg).expect("Failed to decode");
+            assert_eq!(msg_type, MessageType::Ping);
+
+            // Server sends state snapshot
+            let snapshot = itk_protocol::StateSnapshot {
+                app_id: "test".to_string(),
+                timestamp_ms: 12345,
+                data: "{}".to_string(),
+            };
+            let response = encode(MessageType::StateSnapshot, &snapshot).expect("Failed to encode");
+            conn.send(&response).expect("Failed to send");
+        });
+
+        let client = connect_with_retry(&channel_name_client, Duration::from_secs(2));
+
+        // Client sends ping
+        let ping = encode(MessageType::Ping, &()).expect("Failed to encode");
+        client.send(&ping).expect("Failed to send");
+
+        // Client receives state snapshot
+        let response = client.recv().expect("Failed to receive");
+        let (msg_type, snapshot): (MessageType, itk_protocol::StateSnapshot) =
+            decode(&response).expect("Failed to decode");
+        assert_eq!(msg_type, MessageType::StateSnapshot);
+        assert_eq!(snapshot.app_id, "test");
+        assert_eq!(snapshot.timestamp_ms, 12345);
+
+        server_handle.join().expect("Server thread panicked");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_unix_socket_connection_closed_detection() {
+        let channel_name = test_channel_name();
+        let channel_name_client = channel_name.clone();
+
+        let server_handle = thread::spawn(move || {
+            let server = listen(&channel_name).expect("Failed to create server");
+            let conn = server.accept().expect("Failed to accept");
+            // Close connection immediately
+            conn.close();
+        });
+
+        let client = connect_with_retry(&channel_name_client, Duration::from_secs(2));
+
+        // Give the server time to close
+        thread::sleep(Duration::from_millis(100));
+
+        // Should get a ChannelClosed error
+        let result = client.recv();
+        assert!(result.is_err());
+
+        server_handle.join().expect("Server thread panicked");
+    }
+
+    #[test]
+    #[cfg(unix)]
     fn test_unix_socket_multiple_pings() {
         let channel_name = test_channel_name();
         let channel_name_client = channel_name.clone();

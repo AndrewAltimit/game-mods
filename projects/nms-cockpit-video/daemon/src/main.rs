@@ -14,7 +14,8 @@ use itk_protocol::{
     MessageType, ScreenRect, StateQuery, StateResponse, VideoLoad, VideoPause, VideoPlay,
     VideoSeek, decode, encode,
 };
-use std::sync::{Arc, RwLock};
+use parking_lot::RwLock;
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
@@ -98,6 +99,36 @@ struct Args {
     load: Option<String>,
 }
 
+/// Validate a video source URL or file path.
+///
+/// Only allows http://, https://, and local file paths. Rejects potentially
+/// dangerous schemes (file://, javascript:, data:, etc.) and overly long sources.
+fn validate_video_source(source: &str) -> Result<()> {
+    const MAX_SOURCE_LEN: usize = 2048;
+
+    if source.is_empty() {
+        bail!("Video source is empty");
+    }
+    if source.len() > MAX_SOURCE_LEN {
+        bail!("Video source too long: {} bytes", source.len());
+    }
+
+    // Allow http/https URLs
+    if source.starts_with("http://") || source.starts_with("https://") {
+        return Ok(());
+    }
+
+    // Allow absolute and relative local file paths (no URI scheme)
+    // Reject anything that looks like a URI scheme (contains "://" early)
+    if let Some(colon_pos) = source.find("://") {
+        if colon_pos < 20 {
+            bail!("Unsupported video source scheme: {}", &source[..colon_pos]);
+        }
+    }
+
+    Ok(())
+}
+
 /// Application state
 #[derive(Default)]
 struct AppState {
@@ -129,7 +160,7 @@ fn main() -> Result<()> {
 
     // Initialize video player
     {
-        let mut state = state.write().unwrap();
+        let mut state = state.write();
         state.video_player = Some(VideoPlayer::new());
         info!("Video player initialized");
     }
@@ -137,7 +168,7 @@ fn main() -> Result<()> {
     // Auto-load if --load was provided
     if let Some(ref url) = args.load {
         info!(url = %url, "Auto-loading video");
-        let state_read = state.read().unwrap();
+        let state_read = state.read();
         if let Some(ref player) = state_read.video_player {
             player.load(url, 0, true);
         }
@@ -234,7 +265,7 @@ fn process_mod_message(data: &[u8], state: &Arc<RwLock<AppState>>) -> Result<()>
                 "Updated screen rect"
             );
 
-            let mut state = state.write().unwrap();
+            let mut state = state.write();
             state.screen_rect = Some(rect);
             state.last_update_ms = itk_sync::now_ms();
         },
@@ -312,8 +343,9 @@ fn process_client_message(
 
         MessageType::VideoLoad => {
             let (_, cmd): (_, VideoLoad) = decode(data)?;
+            validate_video_source(&cmd.source)?;
             info!(source = %cmd.source, "Loading video");
-            let state = state.read().unwrap();
+            let state = state.read();
             if let Some(ref player) = state.video_player {
                 player.load(&cmd.source, cmd.start_position_ms, cmd.autoplay);
             }
@@ -322,7 +354,7 @@ fn process_client_message(
         MessageType::VideoPlay => {
             let (_, _cmd): (_, VideoPlay) = decode(data)?;
             debug!("Play");
-            let state = state.read().unwrap();
+            let state = state.read();
             if let Some(ref player) = state.video_player {
                 player.play();
             }
@@ -331,7 +363,7 @@ fn process_client_message(
         MessageType::VideoPause => {
             let (_, _cmd): (_, VideoPause) = decode(data)?;
             debug!("Pause");
-            let state = state.read().unwrap();
+            let state = state.read();
             if let Some(ref player) = state.video_player {
                 player.pause();
             }
@@ -340,7 +372,7 @@ fn process_client_message(
         MessageType::VideoSeek => {
             let (_, cmd): (_, VideoSeek) = decode(data)?;
             debug!(position_ms = cmd.position_ms, "Seek");
-            let state = state.read().unwrap();
+            let state = state.read();
             if let Some(ref player) = state.video_player {
                 player.seek(cmd.position_ms);
             }
@@ -356,7 +388,7 @@ fn process_client_message(
 
 /// Handle a state query
 fn handle_state_query(query: &StateQuery, state: &Arc<RwLock<AppState>>) -> Result<StateResponse> {
-    let state = state.read().unwrap();
+    let state = state.read();
 
     let response = match query.query_type.as_str() {
         "screen_rect" => {

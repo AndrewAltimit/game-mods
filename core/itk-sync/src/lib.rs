@@ -443,4 +443,217 @@ mod tests {
         std::thread::sleep(Duration::from_millis(100));
         assert_eq!(sync.current_position_ms(), 10000);
     }
+
+    // =========================================================================
+    // Clock sync edge case tests
+    // =========================================================================
+
+    #[test]
+    fn test_clock_sync_convergence_with_noisy_samples() {
+        let mut sync = ClockSync::new();
+
+        // Simulate multiple samples with varying RTTs and a true offset of ~50ms.
+        // Pair: (send, remote, recv) -> offset = remote - (send + rtt/2)
+        let samples = [
+            // Low RTT, accurate
+            (1000u64, 1060u64, 1020u64), // rtt=20, offset=50
+            (1100, 1160, 1120),          // rtt=20, offset=50
+            // Higher RTT, slightly noisy
+            (1200, 1310, 1400), // rtt=200, offset=10 (noisy)
+            (1300, 1360, 1320), // rtt=20, offset=50
+            (1400, 1460, 1420), // rtt=20, offset=50
+        ];
+
+        for (send, remote, recv) in samples {
+            sync.process_pong(send, remote, recv);
+        }
+
+        // Median-of-best-half should converge near 50ms offset
+        let offset = sync.offset_ms().unwrap();
+        assert!(
+            (40..=60).contains(&offset),
+            "Expected offset near 50, got {offset}"
+        );
+    }
+
+    #[test]
+    fn test_clock_sync_local_to_remote_overflow() {
+        let mut sync = ClockSync::new();
+        // offset = t2 - t1 - (t3-t1)/2 = 1100 - 1000 - 50 = +50
+        sync.process_pong(1000, 1100, 1100);
+
+        // Positive offset: local near u64::MAX should overflow
+        let result = sync.local_to_remote(u64::MAX);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_clock_sync_remote_to_local_underflow() {
+        let mut sync = ClockSync::new();
+        // Create a large positive offset
+        sync.process_pong(0, 1000, 100);
+
+        // Try to convert a small remote time - should underflow
+        let result = sync.remote_to_local(0);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_clock_sync_reset() {
+        let mut sync = ClockSync::new();
+        sync.process_pong(1000, 1050, 1100);
+        assert!(sync.is_synced());
+
+        sync.reset();
+        assert!(!sync.is_synced());
+        assert_eq!(sync.offset_ms(), None);
+    }
+
+    // =========================================================================
+    // Drift correction tests
+    // =========================================================================
+
+    #[test]
+    fn test_drift_correction_within_tolerance() {
+        let mut corrector = DriftCorrector::new();
+        let mut target = PlaybackSync::new("test".to_string());
+        target.position_at_ref_ms = 10000;
+        target.ref_wallclock_ms = now_ms();
+        target.is_playing = true;
+        target.playback_rate = 1.0;
+
+        corrector.update_target(target);
+
+        // Position within 150ms tolerance: no correction
+        let rate = corrector.calculate_rate(10100);
+        assert_eq!(rate, 1.0);
+    }
+
+    #[test]
+    fn test_drift_correction_gentle_ahead() {
+        let mut corrector = DriftCorrector::new();
+        let mut target = PlaybackSync::new("test".to_string());
+        target.position_at_ref_ms = 10000;
+        target.ref_wallclock_ms = now_ms();
+        target.is_playing = true;
+        target.playback_rate = 1.0;
+
+        corrector.update_target(target);
+
+        // 300ms ahead: gentle slowdown
+        let rate = corrector.calculate_rate(10300);
+        assert_eq!(rate, 0.98);
+    }
+
+    #[test]
+    fn test_drift_correction_gentle_behind() {
+        let mut corrector = DriftCorrector::new();
+        let mut target = PlaybackSync::new("test".to_string());
+        target.position_at_ref_ms = 10000;
+        target.ref_wallclock_ms = now_ms();
+        target.is_playing = true;
+        target.playback_rate = 1.0;
+
+        corrector.update_target(target);
+
+        // 300ms behind: gentle speedup
+        let rate = corrector.calculate_rate(9700);
+        assert_eq!(rate, 1.02);
+    }
+
+    #[test]
+    fn test_drift_correction_moderate() {
+        let mut corrector = DriftCorrector::new();
+        let mut target = PlaybackSync::new("test".to_string());
+        target.position_at_ref_ms = 10000;
+        target.ref_wallclock_ms = now_ms();
+        target.is_playing = true;
+        target.playback_rate = 1.0;
+
+        corrector.update_target(target);
+
+        // 1000ms ahead: moderate slowdown
+        let rate = corrector.calculate_rate(11000);
+        assert_eq!(rate, 0.95);
+
+        // 1000ms behind: moderate speedup
+        let rate = corrector.calculate_rate(9000);
+        assert_eq!(rate, 1.05);
+    }
+
+    #[test]
+    fn test_drift_correction_large_requires_seek() {
+        let mut corrector = DriftCorrector::new();
+        let mut target = PlaybackSync::new("test".to_string());
+        target.position_at_ref_ms = 10000;
+        target.ref_wallclock_ms = now_ms();
+        target.is_playing = true;
+        target.playback_rate = 1.0;
+
+        corrector.update_target(target);
+
+        // 2000ms drift: recommend seek (rate = 0.0)
+        let rate = corrector.calculate_rate(12000);
+        assert_eq!(rate, 0.0);
+
+        // should_seek returns target position
+        let seek_target = corrector.should_seek(12000);
+        assert!(seek_target.is_some());
+    }
+
+    #[test]
+    fn test_drift_correction_not_playing() {
+        let mut corrector = DriftCorrector::new();
+        let mut target = PlaybackSync::new("test".to_string());
+        target.position_at_ref_ms = 10000;
+        target.ref_wallclock_ms = now_ms();
+        target.is_playing = false;
+
+        corrector.update_target(target);
+
+        // Not playing = no correction regardless of position
+        let rate = corrector.calculate_rate(50000);
+        assert_eq!(rate, 1.0);
+    }
+
+    #[test]
+    fn test_playback_sync_seek() {
+        let mut sync = PlaybackSync::new("test".to_string());
+        sync.position_at_ref_ms = 5000;
+        sync.is_playing = true;
+
+        sync.seek(20000);
+        assert_eq!(sync.position_at_ref_ms, 20000);
+    }
+
+    #[test]
+    fn test_playback_sync_set_playing_updates_ref() {
+        let mut sync = PlaybackSync::new("test".to_string());
+        sync.position_at_ref_ms = 5000;
+        sync.ref_wallclock_ms = now_ms() - 1000; // 1s ago
+        sync.is_playing = true;
+
+        // set_playing(false) should capture current position
+        sync.set_playing(false);
+        assert!(!sync.is_playing);
+        // Position should be approximately 6000 (5000 + 1000ms)
+        assert!((5900..=6100).contains(&sync.position_at_ref_ms));
+    }
+
+    #[test]
+    fn test_current_drift_ms() {
+        let mut corrector = DriftCorrector::new();
+        let mut target = PlaybackSync::new("test".to_string());
+        target.position_at_ref_ms = 10000;
+        target.ref_wallclock_ms = now_ms();
+        target.is_playing = true;
+
+        corrector.update_target(target);
+
+        let drift = corrector.current_drift_ms(10500);
+        assert!(drift.is_some());
+        let d = drift.unwrap();
+        // Should be approximately +500 (we're 500ms ahead)
+        assert!((400..=600).contains(&d));
+    }
 }

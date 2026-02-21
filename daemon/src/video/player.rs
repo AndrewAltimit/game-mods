@@ -3,8 +3,9 @@
 use super::state::{PlayerCommand, PlayerState, VideoInfo};
 use itk_protocol::{VideoMetadata, VideoState};
 use itk_shmem::FrameBuffer;
+use parking_lot::Mutex;
+use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
@@ -103,12 +104,12 @@ impl VideoPlayer {
 
     /// Get the current player state.
     pub fn state(&self) -> PlayerState {
-        self.state.lock().unwrap().clone()
+        self.state.lock().clone()
     }
 
     /// Get the current video state for protocol messages.
     pub fn get_video_state(&self) -> Option<VideoState> {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock();
         match &*state {
             PlayerState::Playing { info, .. }
             | PlayerState::Paused { info, .. }
@@ -127,7 +128,7 @@ impl VideoPlayer {
 
     /// Get video metadata for protocol messages.
     pub fn get_metadata(&self) -> Option<VideoMetadata> {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock();
         state.video_info().map(|info| VideoMetadata {
             content_id: info.content_id.clone(),
             width: info.width,
@@ -193,14 +194,14 @@ fn decode_loop(state: Arc<Mutex<PlayerState>>, command_rx: Receiver<PlayerComman
                     },
                     PlayerCommand::Stop => {
                         info!("Video decode thread stopping");
-                        *state.lock().unwrap() = PlayerState::Idle;
+                        *state.lock() = PlayerState::Idle;
                         break;
                     },
                 }
             },
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 // Check if we need to decode more frames
-                let current_state = state.lock().unwrap().clone();
+                let current_state = state.lock().clone();
                 if let PlayerState::Playing { .. } = current_state {
                     // In a real implementation, this would decode and output frames
                     // For now, just update the position based on elapsed time
@@ -224,7 +225,7 @@ fn handle_load(
     info!(source = %source, start_ms = start_position_ms, autoplay, "Loading video");
 
     // Set loading state
-    *state.lock().unwrap() = PlayerState::Loading {
+    *state.lock() = PlayerState::Loading {
         source: source.to_string(),
     };
 
@@ -250,13 +251,13 @@ fn handle_load(
     };
 
     if autoplay {
-        *state.lock().unwrap() = PlayerState::Playing {
+        *state.lock() = PlayerState::Playing {
             info,
             position_ms: start_position_ms,
             started_at: Instant::now(),
         };
     } else {
-        *state.lock().unwrap() = PlayerState::Paused {
+        *state.lock() = PlayerState::Paused {
             info,
             position_ms: start_position_ms,
         };
@@ -265,7 +266,7 @@ fn handle_load(
 
 /// Handle a play command.
 fn handle_play(state: &Arc<Mutex<PlayerState>>) {
-    let mut state = state.lock().unwrap();
+    let mut state = state.lock();
     if let PlayerState::Paused { info, position_ms } = state.clone() {
         info!(position_ms, "Resuming playback");
         *state = PlayerState::Playing {
@@ -278,7 +279,7 @@ fn handle_play(state: &Arc<Mutex<PlayerState>>) {
 
 /// Handle a pause command.
 fn handle_pause(state: &Arc<Mutex<PlayerState>>) {
-    let mut state = state.lock().unwrap();
+    let mut state = state.lock();
     if let PlayerState::Playing {
         info,
         position_ms,
@@ -296,7 +297,7 @@ fn handle_pause(state: &Arc<Mutex<PlayerState>>) {
 
 /// Handle a seek command.
 fn handle_seek(state: &Arc<Mutex<PlayerState>>, position_ms: u64) {
-    let mut state = state.lock().unwrap();
+    let mut state = state.lock();
     match state.clone() {
         PlayerState::Playing { info, .. } => {
             info!(position_ms, "Seeking (playing)");
@@ -318,7 +319,7 @@ fn handle_seek(state: &Arc<Mutex<PlayerState>>, position_ms: u64) {
 
 /// Handle a set rate command.
 fn handle_set_rate(state: &Arc<Mutex<PlayerState>>, rate: f64) {
-    let mut state = state.lock().unwrap();
+    let mut state = state.lock();
     if let Some(info) = state.video_info().cloned() {
         let mut new_info = info;
         new_info.playback_rate = rate.clamp(0.25, 4.0);
@@ -338,7 +339,7 @@ fn handle_set_rate(state: &Arc<Mutex<PlayerState>>, rate: f64) {
 
 /// Handle a set volume command.
 fn handle_set_volume(state: &Arc<Mutex<PlayerState>>, volume: f32) {
-    let mut state = state.lock().unwrap();
+    let mut state = state.lock();
     if let Some(info) = state.video_info().cloned() {
         let mut new_info = info;
         new_info.volume = volume.clamp(0.0, 1.0);

@@ -17,18 +17,24 @@
 //! └─────────┴─────────┴──────────┴─────────────┴─────────┴───────────┘
 //! ```
 
-use bincode::Options;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tracing::warn;
 
 /// Protocol magic bytes: "ITKP" (Injection Toolkit Protocol)
 pub const MAGIC: [u8; 4] = *b"ITKP";
 
-/// Current protocol version
-pub const VERSION: u32 = 1;
+/// Current protocol version (bumped to 2 for bitcode migration)
+pub const VERSION: u32 = 2;
 
 /// Maximum payload size (1 MB)
 pub const MAX_PAYLOAD_SIZE: usize = 1024 * 1024;
+
+/// Maximum string field length (256 bytes) per CLAUDE.md constraints
+pub const MAX_STRING_LENGTH: usize = 256;
+
+/// Maximum data/payload field length (64 KB) per CLAUDE.md constraints
+pub const MAX_DATA_LENGTH: usize = 64 * 1024;
 
 /// Header size in bytes
 pub const HEADER_SIZE: usize = 20; // 4 + 4 + 4 + 4 + 4
@@ -52,13 +58,80 @@ pub enum ProtocolError {
     UnknownMessageType(u32),
 
     #[error("serialization error: {0}")]
-    Serialization(#[from] bincode::Error),
+    Serialization(String),
 
     #[error("incomplete header: need {need} bytes, have {have}")]
     IncompleteHeader { need: usize, have: usize },
 
     #[error("incomplete payload: need {need} bytes, have {have}")]
     IncompletePayload { need: usize, have: usize },
+
+    #[error("validation failed: field `{field}` - {reason}")]
+    ValidationFailed { field: String, reason: String },
+}
+
+// =============================================================================
+// Validation helpers
+// =============================================================================
+
+/// Validate that a string field does not exceed MAX_STRING_LENGTH.
+fn validate_string(field: &str, value: &str) -> Result<(), ProtocolError> {
+    if value.len() > MAX_STRING_LENGTH {
+        return Err(ProtocolError::ValidationFailed {
+            field: field.to_string(),
+            reason: format!(
+                "string length {} exceeds maximum {}",
+                value.len(),
+                MAX_STRING_LENGTH
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// Validate that an optional string field does not exceed MAX_STRING_LENGTH.
+fn validate_optional_string(field: &str, value: &Option<String>) -> Result<(), ProtocolError> {
+    if let Some(s) = value {
+        validate_string(field, s)?;
+    }
+    Ok(())
+}
+
+/// Validate that a data field does not exceed MAX_DATA_LENGTH.
+fn validate_data(field: &str, value: &str) -> Result<(), ProtocolError> {
+    if value.len() > MAX_DATA_LENGTH {
+        return Err(ProtocolError::ValidationFailed {
+            field: field.to_string(),
+            reason: format!(
+                "data length {} exceeds maximum {}",
+                value.len(),
+                MAX_DATA_LENGTH
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// Validate that a float is finite (not NaN or Inf).
+fn validate_finite_f32(field: &str, value: f32) -> Result<(), ProtocolError> {
+    if !value.is_finite() {
+        return Err(ProtocolError::ValidationFailed {
+            field: field.to_string(),
+            reason: format!("non-finite float value: {value}"),
+        });
+    }
+    Ok(())
+}
+
+/// Validate that a float is finite (not NaN or Inf).
+fn validate_finite_f64(field: &str, value: f64) -> Result<(), ProtocolError> {
+    if !value.is_finite() {
+        return Err(ProtocolError::ValidationFailed {
+            field: field.to_string(),
+            reason: format!("non-finite float value: {value}"),
+        });
+    }
+    Ok(())
 }
 
 /// Message type identifiers
@@ -208,6 +281,12 @@ impl Header {
         bytes[16..20].copy_from_slice(&self.crc32.to_le_bytes());
         bytes
     }
+}
+
+/// Trait for validating deserialized protocol messages.
+pub trait Validate {
+    /// Validate that all fields satisfy protocol constraints.
+    fn validate(&self) -> Result<(), ProtocolError>;
 }
 
 /// Screen rectangle message
@@ -457,17 +536,170 @@ pub enum VideoErrorCode {
     YoutubeNotEnabled = 9,
 }
 
-/// Bincode configuration with size limits to prevent allocation bombs
-fn bincode_config() -> impl bincode::Options {
-    bincode::options()
-        .with_limit(MAX_PAYLOAD_SIZE as u64)
-        .with_little_endian()
-        .with_fixint_encoding()
+// =============================================================================
+// Validate implementations
+// =============================================================================
+
+impl Validate for ScreenRect {
+    fn validate(&self) -> Result<(), ProtocolError> {
+        validate_finite_f32("x", self.x)?;
+        validate_finite_f32("y", self.y)?;
+        validate_finite_f32("width", self.width)?;
+        validate_finite_f32("height", self.height)?;
+        validate_finite_f32("rotation", self.rotation)?;
+        Ok(())
+    }
 }
 
-/// Encode a message to wire format
+impl Validate for WindowState {
+    fn validate(&self) -> Result<(), ProtocolError> {
+        validate_finite_f32("dpi_scale", self.dpi_scale)?;
+        Ok(())
+    }
+}
+
+impl Validate for OverlayUpdate {
+    fn validate(&self) -> Result<(), ProtocolError> {
+        self.rect.validate()?;
+        self.window.validate()?;
+        Ok(())
+    }
+}
+
+impl Validate for StateSnapshot {
+    fn validate(&self) -> Result<(), ProtocolError> {
+        validate_string("app_id", &self.app_id)?;
+        validate_data("data", &self.data)?;
+        Ok(())
+    }
+}
+
+impl Validate for StateEvent {
+    fn validate(&self) -> Result<(), ProtocolError> {
+        validate_string("app_id", &self.app_id)?;
+        validate_string("event_type", &self.event_type)?;
+        validate_data("data", &self.data)?;
+        Ok(())
+    }
+}
+
+impl Validate for StateQuery {
+    fn validate(&self) -> Result<(), ProtocolError> {
+        validate_string("app_id", &self.app_id)?;
+        validate_string("query_type", &self.query_type)?;
+        validate_data("params", &self.params)?;
+        Ok(())
+    }
+}
+
+impl Validate for StateResponse {
+    fn validate(&self) -> Result<(), ProtocolError> {
+        if let Some(ref data) = self.data {
+            validate_data("data", data)?;
+        }
+        validate_optional_string("error", &self.error)?;
+        Ok(())
+    }
+}
+
+impl Validate for SyncState {
+    fn validate(&self) -> Result<(), ProtocolError> {
+        validate_string("content_id", &self.content_id)?;
+        validate_finite_f64("playback_rate", self.playback_rate)?;
+        Ok(())
+    }
+}
+
+impl Validate for ErrorMessage {
+    fn validate(&self) -> Result<(), ProtocolError> {
+        validate_string("message", &self.message)?;
+        Ok(())
+    }
+}
+
+impl Validate for VideoLoad {
+    fn validate(&self) -> Result<(), ProtocolError> {
+        // Video source URLs can be longer than 256 bytes, use data limit
+        validate_data("source", &self.source)?;
+        Ok(())
+    }
+}
+
+impl Validate for VideoState {
+    fn validate(&self) -> Result<(), ProtocolError> {
+        validate_string("content_id", &self.content_id)?;
+        validate_finite_f64("playback_rate", self.playback_rate)?;
+        validate_finite_f32("volume", self.volume)?;
+        Ok(())
+    }
+}
+
+impl Validate for VideoMetadata {
+    fn validate(&self) -> Result<(), ProtocolError> {
+        validate_string("content_id", &self.content_id)?;
+        validate_finite_f32("fps", self.fps)?;
+        validate_string("codec", &self.codec)?;
+        validate_optional_string("title", &self.title)?;
+        Ok(())
+    }
+}
+
+impl Validate for VideoError {
+    fn validate(&self) -> Result<(), ProtocolError> {
+        validate_string("message", &self.message)?;
+        Ok(())
+    }
+}
+
+// Unit-like messages that need no validation
+impl Validate for ClockPing {
+    fn validate(&self) -> Result<(), ProtocolError> {
+        Ok(())
+    }
+}
+
+impl Validate for ClockPong {
+    fn validate(&self) -> Result<(), ProtocolError> {
+        Ok(())
+    }
+}
+
+impl Validate for VideoPlay {
+    fn validate(&self) -> Result<(), ProtocolError> {
+        Ok(())
+    }
+}
+
+impl Validate for VideoPause {
+    fn validate(&self) -> Result<(), ProtocolError> {
+        Ok(())
+    }
+}
+
+impl Validate for VideoSeek {
+    fn validate(&self) -> Result<(), ProtocolError> {
+        Ok(())
+    }
+}
+
+/// Decode a message from wire format with validation.
+///
+/// Like `decode()`, but also calls `validate()` on the deserialized payload.
+pub fn decode_validated<T: for<'de> Deserialize<'de> + Validate>(
+    bytes: &[u8],
+) -> Result<(MessageType, T), ProtocolError> {
+    let (msg_type, payload): (MessageType, T) = decode(bytes)?;
+    if let Err(e) = payload.validate() {
+        warn!(msg_type = ?msg_type, error = %e, "protocol validation failed");
+        return Err(e);
+    }
+    Ok((msg_type, payload))
+}
+
+/// Encode a message to wire format using bitcode serialization.
 pub fn encode<T: Serialize>(msg_type: MessageType, payload: &T) -> Result<Vec<u8>, ProtocolError> {
-    let payload_bytes = bincode_config().serialize(payload)?;
+    let payload_bytes =
+        bitcode::serialize(payload).map_err(|e| ProtocolError::Serialization(e.to_string()))?;
 
     if payload_bytes.len() > MAX_PAYLOAD_SIZE {
         return Err(ProtocolError::PayloadTooLarge {
@@ -493,9 +725,9 @@ pub fn encode<T: Serialize>(msg_type: MessageType, payload: &T) -> Result<Vec<u8
     Ok(result)
 }
 
-/// Decode a message from wire format
+/// Decode a message from wire format using bitcode deserialization.
 ///
-/// Returns the message type and deserialized payload
+/// Returns the message type and deserialized payload.
 pub fn decode<T: for<'de> Deserialize<'de>>(
     bytes: &[u8],
 ) -> Result<(MessageType, T), ProtocolError> {
@@ -522,8 +754,8 @@ pub fn decode<T: for<'de> Deserialize<'de>>(
         });
     }
 
-    // Use bincode with size limits to prevent allocation bombs
-    let payload: T = bincode_config().deserialize(payload_bytes)?;
+    let payload: T = bitcode::deserialize(payload_bytes)
+        .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
 
     Ok((header.msg_type, payload))
 }
@@ -586,6 +818,217 @@ mod tests {
 
         let result = Header::from_bytes(&bytes);
         assert!(matches!(result, Err(ProtocolError::InvalidMagic { .. })));
+    }
+
+    #[test]
+    fn test_encode_decode_video_load() {
+        let load = VideoLoad {
+            source: "https://example.com/video.mp4".to_string(),
+            start_position_ms: 5000,
+            autoplay: true,
+        };
+
+        let encoded = encode(MessageType::VideoLoad, &load).unwrap();
+        let (msg_type, decoded): (_, VideoLoad) = decode(&encoded).unwrap();
+
+        assert_eq!(msg_type, MessageType::VideoLoad);
+        assert_eq!(decoded.source, load.source);
+        assert_eq!(decoded.start_position_ms, 5000);
+        assert!(decoded.autoplay);
+    }
+
+    #[test]
+    fn test_encode_decode_sync_state() {
+        let sync = SyncState {
+            content_id: "abc123".to_string(),
+            position_at_ref_ms: 42000,
+            ref_wallclock_ms: 1700000000000,
+            is_playing: true,
+            playback_rate: 1.0,
+        };
+
+        let encoded = encode(MessageType::SyncState, &sync).unwrap();
+        let (msg_type, decoded): (_, SyncState) = decode(&encoded).unwrap();
+
+        assert_eq!(msg_type, MessageType::SyncState);
+        assert_eq!(decoded.content_id, "abc123");
+        assert_eq!(decoded.position_at_ref_ms, 42000);
+        assert!(decoded.is_playing);
+    }
+
+    // =========================================================================
+    // Validation tests
+    // =========================================================================
+
+    #[test]
+    fn test_validate_screen_rect_nan_rejected() {
+        let rect = ScreenRect {
+            x: f32::NAN,
+            y: 200.0,
+            width: 640.0,
+            height: 480.0,
+            rotation: 0.0,
+            visible: true,
+        };
+        let encoded = encode(MessageType::ScreenRect, &rect).unwrap();
+        let result: Result<(_, ScreenRect), _> = decode_validated(&encoded);
+        assert!(matches!(
+            result,
+            Err(ProtocolError::ValidationFailed { .. })
+        ));
+    }
+
+    #[test]
+    fn test_validate_screen_rect_inf_rejected() {
+        let rect = ScreenRect {
+            x: 100.0,
+            y: 200.0,
+            width: f32::INFINITY,
+            height: 480.0,
+            rotation: 0.0,
+            visible: true,
+        };
+        let encoded = encode(MessageType::ScreenRect, &rect).unwrap();
+        let result: Result<(_, ScreenRect), _> = decode_validated(&encoded);
+        assert!(matches!(
+            result,
+            Err(ProtocolError::ValidationFailed { .. })
+        ));
+    }
+
+    #[test]
+    fn test_validate_screen_rect_neg_inf_rejected() {
+        let rect = ScreenRect {
+            x: 100.0,
+            y: f32::NEG_INFINITY,
+            width: 640.0,
+            height: 480.0,
+            rotation: 0.0,
+            visible: true,
+        };
+        let encoded = encode(MessageType::ScreenRect, &rect).unwrap();
+        let result: Result<(_, ScreenRect), _> = decode_validated(&encoded);
+        assert!(matches!(
+            result,
+            Err(ProtocolError::ValidationFailed { .. })
+        ));
+    }
+
+    #[test]
+    fn test_validate_screen_rect_valid() {
+        let rect = ScreenRect {
+            x: 100.0,
+            y: 200.0,
+            width: 640.0,
+            height: 480.0,
+            rotation: 0.0,
+            visible: true,
+        };
+        let encoded = encode(MessageType::ScreenRect, &rect).unwrap();
+        let result: Result<(_, ScreenRect), _> = decode_validated(&encoded);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_oversized_string_rejected() {
+        let snapshot = StateSnapshot {
+            app_id: "x".repeat(MAX_STRING_LENGTH + 1),
+            timestamp_ms: 0,
+            data: "{}".to_string(),
+        };
+        let encoded = encode(MessageType::StateSnapshot, &snapshot).unwrap();
+        let result: Result<(_, StateSnapshot), _> = decode_validated(&encoded);
+        assert!(matches!(
+            result,
+            Err(ProtocolError::ValidationFailed { .. })
+        ));
+    }
+
+    #[test]
+    fn test_validate_max_length_string_accepted() {
+        let snapshot = StateSnapshot {
+            app_id: "x".repeat(MAX_STRING_LENGTH),
+            timestamp_ms: 0,
+            data: "{}".to_string(),
+        };
+        let encoded = encode(MessageType::StateSnapshot, &snapshot).unwrap();
+        let result: Result<(_, StateSnapshot), _> = decode_validated(&encoded);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_empty_string_accepted() {
+        let snapshot = StateSnapshot {
+            app_id: String::new(),
+            timestamp_ms: 0,
+            data: String::new(),
+        };
+        let encoded = encode(MessageType::StateSnapshot, &snapshot).unwrap();
+        let result: Result<(_, StateSnapshot), _> = decode_validated(&encoded);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_oversized_data_rejected() {
+        let snapshot = StateSnapshot {
+            app_id: "test".to_string(),
+            timestamp_ms: 0,
+            data: "x".repeat(MAX_DATA_LENGTH + 1),
+        };
+        let encoded = encode(MessageType::StateSnapshot, &snapshot).unwrap();
+        let result: Result<(_, StateSnapshot), _> = decode_validated(&encoded);
+        assert!(matches!(
+            result,
+            Err(ProtocolError::ValidationFailed { .. })
+        ));
+    }
+
+    #[test]
+    fn test_validate_data_at_boundary_accepted() {
+        let snapshot = StateSnapshot {
+            app_id: "test".to_string(),
+            timestamp_ms: 0,
+            data: "x".repeat(MAX_DATA_LENGTH),
+        };
+        let encoded = encode(MessageType::StateSnapshot, &snapshot).unwrap();
+        let result: Result<(_, StateSnapshot), _> = decode_validated(&encoded);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_video_state_nan_playback_rate() {
+        let state = VideoState {
+            content_id: "abc".to_string(),
+            position_ms: 0,
+            duration_ms: 0,
+            is_playing: false,
+            is_buffering: false,
+            playback_rate: f64::NAN,
+            volume: 0.5,
+        };
+        let encoded = encode(MessageType::VideoState, &state).unwrap();
+        let result: Result<(_, VideoState), _> = decode_validated(&encoded);
+        assert!(matches!(
+            result,
+            Err(ProtocolError::ValidationFailed { .. })
+        ));
+    }
+
+    #[test]
+    fn test_validate_sync_state_inf_rate() {
+        let sync = SyncState {
+            content_id: "abc".to_string(),
+            position_at_ref_ms: 0,
+            ref_wallclock_ms: 0,
+            is_playing: true,
+            playback_rate: f64::INFINITY,
+        };
+        let encoded = encode(MessageType::SyncState, &sync).unwrap();
+        let result: Result<(_, SyncState), _> = decode_validated(&encoded);
+        assert!(matches!(
+            result,
+            Err(ProtocolError::ValidationFailed { .. })
+        ));
     }
 
     #[test]

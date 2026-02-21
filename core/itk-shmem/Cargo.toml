@@ -13,6 +13,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
 [dependencies]
 thiserror = { workspace = true }
 cfg-if = { workspace = true }
+tracing = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true }

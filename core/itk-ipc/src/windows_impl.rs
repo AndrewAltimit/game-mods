@@ -5,10 +5,10 @@
 //! connecting to or injecting commands into the daemon.
 
 use super::{IpcChannel, IpcError, IpcServer, Result, read_message};
+use parking_lot::Mutex;
 use std::ffi::OsStr;
 use std::io::Read;
 use std::os::windows::ffi::OsStrExt;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use windows::Win32::Foundation::{
     CloseHandle, HANDLE, HLOCAL, INVALID_HANDLE_VALUE, LocalFree, WIN32_ERROR,
@@ -219,7 +219,7 @@ impl IpcChannel for NamedPipeClient {
             return Err(IpcError::NotConnected);
         }
 
-        let handle = self.handle.lock().unwrap();
+        let handle = self.handle.lock();
 
         // Use helper to ensure all data is written (handles partial writes)
         write_all_to_handle(*handle, data)?;
@@ -237,7 +237,7 @@ impl IpcChannel for NamedPipeClient {
             return Err(IpcError::NotConnected);
         }
 
-        let handle = self.handle.lock().unwrap();
+        let handle = self.handle.lock();
         let mut reader = PipeReader { handle: *handle };
         read_message(&mut reader)
     }
@@ -247,7 +247,7 @@ impl IpcChannel for NamedPipeClient {
             return Err(IpcError::NotConnected);
         }
 
-        let handle = self.handle.lock().unwrap();
+        let handle = self.handle.lock();
 
         // Use PeekNamedPipe for true non-blocking check
         let bytes_available = peek_pipe_bytes(*handle)?;
@@ -266,7 +266,7 @@ impl IpcChannel for NamedPipeClient {
 
     fn close(&self) {
         if self.connected.swap(false, Ordering::SeqCst) {
-            let handle = self.handle.lock().unwrap();
+            let handle = self.handle.lock();
             unsafe {
                 let _ = CloseHandle(*handle);
             }
@@ -380,7 +380,7 @@ impl IpcChannel for NamedPipeConnection {
             return Err(IpcError::NotConnected);
         }
 
-        let handle = self.handle.lock().unwrap();
+        let handle = self.handle.lock();
 
         // Use helper to ensure all data is written (handles partial writes)
         write_all_to_handle(*handle, data)?;
@@ -398,7 +398,7 @@ impl IpcChannel for NamedPipeConnection {
             return Err(IpcError::NotConnected);
         }
 
-        let handle = self.handle.lock().unwrap();
+        let handle = self.handle.lock();
         let mut reader = PipeReader { handle: *handle };
         read_message(&mut reader)
     }
@@ -408,7 +408,7 @@ impl IpcChannel for NamedPipeConnection {
             return Err(IpcError::NotConnected);
         }
 
-        let handle = self.handle.lock().unwrap();
+        let handle = self.handle.lock();
 
         // Use PeekNamedPipe for true non-blocking check
         let bytes_available = peek_pipe_bytes(*handle)?;
@@ -427,7 +427,7 @@ impl IpcChannel for NamedPipeConnection {
 
     fn close(&self) {
         if self.connected.swap(false, Ordering::SeqCst) {
-            let handle = self.handle.lock().unwrap();
+            let handle = self.handle.lock();
             unsafe {
                 let _ = DisconnectNamedPipe(*handle);
                 let _ = CloseHandle(*handle);
