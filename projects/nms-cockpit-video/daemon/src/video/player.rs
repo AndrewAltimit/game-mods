@@ -522,7 +522,10 @@ fn handle_pause(state: &Arc<Mutex<PlayerState>>, ctx: &Option<DecodeContext>) {
     let mut s = lock_state(state);
     if let PlayerState::Playing { info, .. } = s.clone() {
         // Use the frame writer's last PTS as the accurate position
-        let current_pos = ctx.as_ref().map(|c| c.writer.last_pts_ms()).unwrap_or(0);
+        let current_pos = ctx
+            .as_ref()
+            .and_then(|c| c.writer.last_pts_ms())
+            .unwrap_or(0);
         info!(position_ms = current_pos, "Pausing playback");
 
         // Pause audio

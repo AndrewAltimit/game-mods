@@ -152,6 +152,8 @@ impl VideoDecoder {
 
         // Set hardware device context if available
         if let Some(ref hw) = hw_ctx {
+            // SAFETY: `decoder_ctx` is a valid codec context. `hw.new_ref()` returns
+            // a valid AVBufferRef that ffmpeg takes ownership of via hw_device_ctx.
             unsafe {
                 let raw = decoder_ctx.as_mut_ptr();
                 (*raw).hw_device_ctx = hw.new_ref();
@@ -160,6 +162,8 @@ impl VideoDecoder {
             info!("Hardware acceleration enabled (D3D11VA)");
         } else {
             // Software mode: set thread_count for better performance
+            // SAFETY: `decoder_ctx` is a valid codec context. Setting thread_count
+            // to 0 tells ffmpeg to auto-detect the optimal thread count.
             unsafe {
                 let raw = decoder_ctx.as_mut_ptr();
                 (*raw).thread_count = 0; // auto-detect
@@ -168,6 +172,24 @@ impl VideoDecoder {
         }
 
         let decoder = decoder_ctx.decoder().video()?;
+
+        // Validate source dimensions against safety limit
+        let src_w = decoder.width();
+        let src_h = decoder.height();
+        if src_w > itk_shmem::MAX_FRAME_DIMENSION || src_h > itk_shmem::MAX_FRAME_DIMENSION {
+            return Err(VideoError::InvalidFrame(format!(
+                "source dimensions {}x{} exceed maximum {}",
+                src_w,
+                src_h,
+                itk_shmem::MAX_FRAME_DIMENSION
+            )));
+        }
+        if src_w == 0 || src_h == 0 {
+            return Err(VideoError::InvalidFrame(format!(
+                "source dimensions {}x{} are zero",
+                src_w, src_h
+            )));
+        }
 
         info!(
             width = decoder.width(),
@@ -184,7 +206,7 @@ impl VideoDecoder {
             decoder,
             video_stream_index,
             time_base,
-            scaler: FrameScaler::with_size(width, height),
+            scaler: FrameScaler::with_size(width, height)?,
             duration_ms,
             fps,
             frame: VideoFrame::empty(),
@@ -234,6 +256,8 @@ impl VideoDecoder {
                 Ok(()) => {
                     // Transfer from GPU to CPU memory if using hardware acceleration
                     if self.hw_accel_active {
+                        // SAFETY: `self.frame` is a valid, just-decoded AVFrame from
+                        // `receive_frame`. The transfer function handles null checks.
                         unsafe {
                             crate::hwaccel::transfer_hw_frame_if_needed(self.frame.as_mut_ptr());
                         }
@@ -241,7 +265,7 @@ impl VideoDecoder {
 
                     // Calculate PTS in milliseconds
                     let pts = self.frame.pts().unwrap_or(0);
-                    let pts_ms = self.pts_to_ms(pts);
+                    let pts_ms = self.pts_to_ms(pts)?;
 
                     // Scale the frame to output resolution
                     let scaled_data = self.scaler.scale(&self.frame)?;
@@ -300,20 +324,28 @@ impl VideoDecoder {
     }
 
     /// Convert a PTS value to milliseconds.
-    fn pts_to_ms(&self, pts: i64) -> u64 {
+    fn pts_to_ms(&self, pts: i64) -> VideoResult<u64> {
         if pts < 0 {
-            return 0;
+            return Ok(0);
         }
 
         let num = self.time_base.numerator() as i64;
         let den = self.time_base.denominator() as i64;
 
         if den == 0 {
-            return 0;
+            return Ok(0);
         }
 
         // pts * (num / den) * 1000 = pts * num * 1000 / den
-        ((pts * num * 1000) / den) as u64
+        // Use checked arithmetic to prevent overflow with large PTS values
+        let numerator = pts
+            .checked_mul(num)
+            .and_then(|v| v.checked_mul(1000))
+            .ok_or_else(|| {
+                VideoError::DecodeError(format!("PTS overflow: pts={pts}, time_base={num}/{den}"))
+            })?;
+
+        Ok((numerator / den) as u64)
     }
 
     /// Convert milliseconds to PTS value.

@@ -13,7 +13,7 @@ pub const DEFAULT_SHMEM_NAME: &str = "itk_video_frames";
 /// Writes decoded video frames to a shared memory buffer.
 pub struct FrameWriter {
     buffer: FrameBuffer,
-    last_pts_ms: u64,
+    last_pts_ms: Option<u64>,
     content_id_hash: u64,
 }
 
@@ -36,7 +36,7 @@ impl FrameWriter {
         };
         Ok(Self {
             buffer,
-            last_pts_ms: 0,
+            last_pts_ms: None,
             content_id_hash: 0,
         })
     }
@@ -51,7 +51,7 @@ impl FrameWriter {
         let buffer = FrameBuffer::open(name, width, height)?;
         Ok(Self {
             buffer,
-            last_pts_ms: 0,
+            last_pts_ms: None,
             content_id_hash: 0,
         })
     }
@@ -81,13 +81,21 @@ impl FrameWriter {
     /// Returns `true` if the frame was written, `false` if skipped.
     pub fn write_frame(&mut self, frame: &DecodedFrame) -> VideoResult<bool> {
         // Frame-skip optimization: don't write if PTS hasn't changed
-        if frame.pts_ms == self.last_pts_ms && self.last_pts_ms > 0 {
+        if self.last_pts_ms == Some(frame.pts_ms) {
             trace!(pts_ms = frame.pts_ms, "skipping duplicate frame");
             return Ok(false);
         }
 
-        // Verify frame dimensions match buffer
-        let expected_size = (frame.width as usize) * (frame.height as usize) * 4;
+        // Verify frame dimensions match buffer (checked arithmetic for untrusted dimensions)
+        let expected_size = (frame.width as usize)
+            .checked_mul(frame.height as usize)
+            .and_then(|s| s.checked_mul(4))
+            .ok_or_else(|| {
+                VideoError::InvalidFrame(format!(
+                    "frame size overflow: {}x{}x4",
+                    frame.width, frame.height
+                ))
+            })?;
         if frame.data.len() != expected_size {
             return Err(VideoError::InvalidFrame(format!(
                 "frame size mismatch: expected {} bytes, got {}",
@@ -97,12 +105,14 @@ impl FrameWriter {
         }
 
         // Write to the shared memory buffer
+        // SAFETY: Frame data has been validated above to match expected dimensions.
+        // FrameWriter is the sole writer to this shared memory region.
         unsafe {
             self.buffer
                 .write_frame(&frame.data, frame.pts_ms, self.content_id_hash)?;
         }
 
-        self.last_pts_ms = frame.pts_ms;
+        self.last_pts_ms = Some(frame.pts_ms);
         trace!(pts_ms = frame.pts_ms, "wrote frame to shmem");
         Ok(true)
     }
@@ -112,21 +122,23 @@ impl FrameWriter {
     /// This is a lower-level API for when you have raw RGBA data.
     pub fn write_raw(&mut self, data: &[u8], pts_ms: u64) -> VideoResult<bool> {
         // Frame-skip optimization
-        if pts_ms == self.last_pts_ms && self.last_pts_ms > 0 {
+        if self.last_pts_ms == Some(pts_ms) {
             return Ok(false);
         }
 
+        // SAFETY: Caller provides raw RGBA data; FrameBuffer validates size.
+        // FrameWriter is the sole writer to this shared memory region.
         unsafe {
             self.buffer
                 .write_frame(data, pts_ms, self.content_id_hash)?;
         }
 
-        self.last_pts_ms = pts_ms;
+        self.last_pts_ms = Some(pts_ms);
         Ok(true)
     }
 
     /// Get the last written PTS in milliseconds.
-    pub fn last_pts_ms(&self) -> u64 {
+    pub fn last_pts_ms(&self) -> Option<u64> {
         self.last_pts_ms
     }
 
@@ -167,7 +179,12 @@ impl FrameReader {
     /// Open an existing shared memory region for reading.
     pub fn open(name: &str, width: u32, height: u32) -> VideoResult<Self> {
         let buffer = FrameBuffer::open(name, width, height)?;
-        let frame_size = (width as usize) * (height as usize) * 4;
+        let frame_size = (width as usize)
+            .checked_mul(height as usize)
+            .and_then(|s| s.checked_mul(4))
+            .ok_or_else(|| {
+                VideoError::InvalidFrame(format!("frame size overflow: {width}x{height}x4"))
+            })?;
         Ok(Self {
             buffer,
             last_pts_ms: 0,

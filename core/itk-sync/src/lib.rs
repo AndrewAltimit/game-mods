@@ -31,6 +31,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(test)]
 use std::time::Duration;
 use thiserror::Error;
+use tracing::warn;
 
 /// Sync errors
 #[derive(Error, Debug)]
@@ -244,7 +245,19 @@ impl PlaybackSync {
             return self.position_at_ref_ms;
         }
 
-        let elapsed = now_ms().saturating_sub(self.ref_wallclock_ms);
+        let now = now_ms();
+        let elapsed = now.saturating_sub(self.ref_wallclock_ms);
+
+        // Detect backward clock jumps (ref_wallclock is in the future)
+        if self.ref_wallclock_ms > now && self.ref_wallclock_ms - now > 1000 {
+            warn!(
+                ref_wallclock_ms = self.ref_wallclock_ms,
+                now_ms = now,
+                jump_ms = self.ref_wallclock_ms - now,
+                "clock jump detected: reference time is in the future"
+            );
+        }
+
         let adjusted_elapsed = (elapsed as f64 * self.playback_rate) as u64;
 
         // Use saturating_add to prevent overflow on large values
@@ -655,5 +668,137 @@ mod tests {
         let d = drift.unwrap();
         // Should be approximately +500 (we're 500ms ahead)
         assert!((400..=600).contains(&d));
+    }
+
+    // =========================================================================
+    // Phase 6: Additional edge case tests
+    // =========================================================================
+
+    #[test]
+    fn test_clock_sync_no_offset_before_samples() {
+        let sync = ClockSync::new();
+        assert!(!sync.is_synced());
+        assert_eq!(sync.offset_ms(), None);
+        assert!(sync.local_to_remote(1000).is_err());
+        assert!(sync.remote_to_local(1000).is_err());
+    }
+
+    #[test]
+    fn test_clock_sync_negative_offset() {
+        let mut sync = ClockSync::new();
+        // Remote is behind local: remote_time < local_at_remote
+        // send=1000, remote=950, recv=1100 -> rtt=100, one_way=50
+        // offset = 950 - (1000+50) = -100
+        sync.process_pong(1000, 950, 1100);
+        let offset = sync.offset_ms().unwrap();
+        assert_eq!(offset, -100);
+
+        // Conversions should work with negative offset
+        let remote = sync.local_to_remote(1000).unwrap();
+        assert_eq!(remote, 900); // 1000 - 100
+
+        let local = sync.remote_to_local(900).unwrap();
+        assert_eq!(local, 1000); // 900 + 100
+    }
+
+    #[test]
+    fn test_clock_sync_max_samples_eviction() {
+        let mut sync = ClockSync::new();
+
+        // Add more than max_samples (10) to test eviction
+        for i in 0..15u64 {
+            sync.process_pong(i * 100, i * 100 + 50, i * 100 + 100);
+        }
+
+        assert!(sync.is_synced());
+        // After eviction, should still have valid offset
+        let offset = sync.offset_ms().unwrap();
+        assert_eq!(offset, 0); // All samples have 0 offset
+    }
+
+    #[test]
+    fn test_clock_sync_zero_rtt() {
+        let mut sync = ClockSync::new();
+        // Zero RTT (instantaneous round trip)
+        sync.process_pong(1000, 1000, 1000);
+        assert_eq!(sync.offset_ms(), Some(0));
+    }
+
+    #[test]
+    fn test_playback_sync_position_with_rate() {
+        let mut sync = PlaybackSync::new("test".to_string());
+        sync.position_at_ref_ms = 10000;
+        sync.ref_wallclock_ms = now_ms() - 1000; // 1 second ago
+        sync.is_playing = true;
+        sync.playback_rate = 2.0; // Double speed
+
+        // Should be approximately 12000 (10000 + 1000 * 2.0)
+        let pos = sync.current_position_ms();
+        assert!((11800..=12200).contains(&pos));
+    }
+
+    #[test]
+    fn test_playback_sync_position_saturates() {
+        let mut sync = PlaybackSync::new("test".to_string());
+        sync.position_at_ref_ms = u64::MAX - 100;
+        sync.ref_wallclock_ms = now_ms() - 1000;
+        sync.is_playing = true;
+        sync.playback_rate = 1.0;
+
+        // Should saturate at u64::MAX, not wrap around
+        let pos = sync.current_position_ms();
+        assert_eq!(pos, u64::MAX);
+    }
+
+    #[test]
+    fn test_playback_sync_update_from() {
+        let mut local = PlaybackSync::new("old".to_string());
+        local.playback_rate = 0.98; // Local drift correction
+
+        let remote = PlaybackSync {
+            content_id: "new_content".to_string(),
+            position_at_ref_ms: 5000,
+            ref_wallclock_ms: 123456789,
+            is_playing: true,
+            playback_rate: 1.05,
+        };
+
+        local.update_from(&remote);
+
+        assert_eq!(local.content_id, "new_content");
+        assert_eq!(local.position_at_ref_ms, 5000);
+        assert_eq!(local.ref_wallclock_ms, 123456789);
+        assert!(local.is_playing);
+        // Playback rate should NOT be copied (it's local drift correction)
+        assert_eq!(local.playback_rate, 0.98);
+    }
+
+    #[test]
+    fn test_drift_corrector_no_target_no_seek() {
+        let corrector = DriftCorrector::new();
+        assert!(corrector.should_seek(99999).is_none());
+        assert!(corrector.current_drift_ms(99999).is_none());
+    }
+
+    #[test]
+    fn test_drift_correction_with_clock_offset() {
+        let mut corrector = DriftCorrector::new();
+
+        // Sync clocks: remote is 100ms ahead
+        corrector.clock_sync_mut().process_pong(1000, 1150, 1100);
+        // offset = 1150 - (1000+50) = 100
+
+        let mut target = PlaybackSync::new("test".to_string());
+        target.position_at_ref_ms = 10000;
+        target.ref_wallclock_ms = now_ms() + 100; // Remote time (100ms ahead)
+        target.is_playing = true;
+        target.playback_rate = 1.0;
+
+        corrector.update_target(target);
+
+        // With clock correction applied, position should be close to target
+        let rate = corrector.calculate_rate(10000);
+        // Should be within tolerance (1.0) since we account for clock offset
+        assert_eq!(rate, 1.0);
     }
 }

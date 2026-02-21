@@ -13,6 +13,7 @@ repos:
         args: [--unsafe]
       - id: check-added-large-files
         args: [--maxkb=1000]
+        exclude: '^Cargo\.lock$'
       - id: check-json
       - id: pretty-format-json
         args: [--autofix, --no-sort-keys]
@@ -35,19 +36,19 @@ repos:
         types: [shell]
         args: [-x]
 
-  # Rust formatting and linting (containerized)
+  # Rust formatting and linting (local, no Docker rebuild)
   - repo: local
     hooks:
       - id: rust-fmt
         name: Rust format check
-        entry: docker compose --profile ci run --rm rust-ci cargo fmt --all -- --check
+        entry: cargo fmt --all -- --check
         language: system
         files: '\.rs$'
         pass_filenames: false
 
       - id: rust-clippy
         name: Rust clippy lint
-        entry: docker compose --profile ci run --rm rust-ci cargo clippy --all-targets -- -D warnings
+        entry: cargo clippy --all-targets -- -D warnings
         language: system
         files: '\.rs$'
         pass_filenames: false

@@ -397,6 +397,9 @@ fn audio_decode_loop(
                             // Extract f32 samples from resampled frame
                             let data = resampled_frame.data(0);
                             let sample_count = resampled_frame.samples() * target_channels as usize;
+                            // SAFETY: Resampled frame data is in FLT (f32) format
+                            // (configured via target_format). `data` points to valid
+                            // memory of `sample_count` f32 samples.
                             let samples: &[f32] = unsafe {
                                 std::slice::from_raw_parts(
                                     data.as_ptr() as *const f32,
@@ -407,13 +410,12 @@ fn audio_decode_loop(
                             // Write to ring buffer, blocking briefly if full to
                             // maintain A/V sync (instead of dropping samples)
                             let mut offset = 0;
-                            let mut retries = 0;
+                            let deadline = std::time::Instant::now() + Duration::from_millis(50);
                             while offset < samples.len() && running {
                                 let written = producer.push_slice(&samples[offset..]);
                                 offset += written;
                                 if offset < samples.len() {
-                                    retries += 1;
-                                    if retries > 50 {
+                                    if std::time::Instant::now() >= deadline {
                                         // Timeout: consumer stalled, drop remaining
                                         warn!(
                                             "Audio ring buffer blocked too long, dropped {} samples",
