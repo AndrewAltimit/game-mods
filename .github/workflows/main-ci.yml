@@ -7,6 +7,12 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create a release (even without tag)'
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: main-ci-${{ github.sha }}
@@ -70,10 +76,193 @@ jobs:
             fi
           done
 
+  # -- Build Rust binaries for release -------------------------------------
+  build-rust-binaries:
+    name: Build Rust Binaries
+    needs: [ci]
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.create_release == 'true'
+    runs-on: self-hosted
+    timeout-minutes: 30
+    steps:
+      - name: Pre-checkout cleanup
+        run: |
+          docker run --rm -v "$(pwd):/workspace" busybox:1.36.1 sh -c \
+            "rm -rf /workspace/outputs /workspace/.git/index.lock" 2>/dev/null || \
+            sudo rm -rf outputs .git/index.lock 2>/dev/null || true
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          clean: true
+
+      - name: Set UID/GID
+        run: |
+          echo "USER_ID=$(id -u)" >> $GITHUB_ENV
+          echo "GROUP_ID=$(id -g)" >> $GITHUB_ENV
+
+      - name: Create output directory
+        run: mkdir -p rust-binaries
+
+      - name: Build all Rust binaries (Linux) via container
+        run: |
+          echo "Building all Rust binaries using rust-ci container..."
+          docker compose --profile ci run --rm rust-ci bash -c '
+            set -e
+
+            cargo build --release
+
+            # Copy binaries
+            cp target/release/nms-video-daemon /app/rust-binaries/nms-video-daemon-linux-x64
+            echo "Built nms-video-daemon for Linux x64"
+
+            cp target/release/nms-video-overlay /app/rust-binaries/nms-video-overlay-linux-x64
+            echo "Built nms-video-overlay for Linux x64"
+
+            cp target/release/mem-scanner /app/rust-binaries/mem-scanner-linux-x64
+            echo "Built mem-scanner for Linux x64"
+          '
+
+      - name: Fix Docker file ownership
+        if: always()
+        run: |
+          for dir in target rust-binaries; do
+            if [ -d "$dir" ]; then
+              docker run --rm -v "$(pwd)/$dir:/workspace" busybox:1.36.1 \
+                chown -Rh "$(id -u):$(id -g)" /workspace 2>/dev/null || true
+            fi
+          done
+
+      - name: List built binaries
+        run: |
+          echo "Built Rust binaries:"
+          ls -la rust-binaries/
+          file rust-binaries/* || true
+
+      - name: Upload Rust binary artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-binaries
+          path: rust-binaries/*
+          retention-days: 90
+
+  # -- Create GitHub Release -----------------------------------------------
+  create-release:
+    name: Create GitHub Release
+    needs: [build-rust-binaries]
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.create_release == 'true'
+    runs-on: self-hosted
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download Rust binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: rust-binaries
+          path: release-artifacts/binaries
+
+      - name: List release artifacts
+        run: |
+          echo "Release artifacts:"
+          find release-artifacts -type f | sort
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+          else
+            VERSION="v$(date +%Y.%m.%d)-$(echo ${{ github.sha }} | cut -c1-7)"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Generate changelog from merged PRs
+        id: changelog
+        run: |
+          CURRENT_TAG="${{ steps.version.outputs.version }}"
+
+          # Find the previous release tag for comparison
+          PREVIOUS_TAG=$(git tag --sort=-version:refname --list 'v[0-9]*' | grep -Fxv "$CURRENT_TAG" | head -n 1)
+
+          CHANGELOG=""
+          if [ -n "$PREVIOUS_TAG" ]; then
+            echo "Generating changelog: ${PREVIOUS_TAG}...${CURRENT_TAG}"
+            CHANGELOG=$(gh api repos/${{ github.repository }}/releases/generate-notes \
+              -f tag_name="$CURRENT_TAG" \
+              -f previous_tag_name="$PREVIOUS_TAG" \
+              --jq '.body' 2>/dev/null || echo "")
+          fi
+
+          if [ -n "$CHANGELOG" ]; then
+            printf '%s\n' "$CHANGELOG" > changelog_snippet.md
+            echo "has_changelog=true" >> $GITHUB_OUTPUT
+            echo "Changelog generated successfully"
+          else
+            echo "No changelog generated"
+            echo "has_changelog=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          cat << 'NOTES_EOF' > release_notes.md
+          ## Release ${{ steps.version.outputs.version }}
+
+          ### Rust Binaries
+
+          Pre-built binaries for the Injection Toolkit and game mod tools:
+
+          | Binary | Platform | Description |
+          |--------|----------|-------------|
+          | `nms-video-daemon-linux-x64` | Linux x64 | NMS cockpit video player daemon |
+          | `nms-video-overlay-linux-x64` | Linux x64 | NMS cockpit video player overlay |
+          | `mem-scanner-linux-x64` | Linux x64 | Memory pattern scanner for reverse engineering |
+
+          ### Installation
+
+          ```bash
+          # Make binaries executable (Linux)
+          chmod +x *-linux-x64
+          ```
+
+          ### Commit Information
+
+          - **Commit**: ${{ github.sha }}
+          - **Branch**: ${{ github.ref_name }}
+          NOTES_EOF
+
+          # Append auto-generated changelog if available
+          if [ "${{ steps.changelog.outputs.has_changelog }}" = "true" ] && [ -f changelog_snippet.md ]; then
+            printf '\n---\n\n' >> release_notes.md
+            cat changelog_snippet.md >> release_notes.md
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: Release ${{ steps.version.outputs.version }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          files: |
+            release-artifacts/binaries/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   # -- CI Summary ----------------------------------------------------------
   notify:
     name: CI Summary
-    needs: [ci]
+    needs: [ci, build-rust-binaries, create-release]
     if: always()
     runs-on: self-hosted
     steps:
@@ -86,7 +275,9 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| CI | ${{ needs.ci.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| CI | ${{ needs.ci.result == 'success' && 'pass' || needs.ci.result == 'skipped' && 'skipped' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Rust Binaries | ${{ needs.build-rust-binaries.result == 'success' && 'pass' || needs.build-rust-binaries.result == 'skipped' && 'skipped' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| GitHub Release | ${{ needs.create-release.result == 'success' && 'pass' || needs.create-release.result == 'skipped' && 'skipped' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
 
           if [[ "${{ needs.ci.result }}" == "failure" ]]; then
             echo "" >> $GITHUB_STEP_SUMMARY
