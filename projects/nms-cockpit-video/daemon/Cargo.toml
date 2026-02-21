@@ -40,6 +40,9 @@ tracing-subscriber = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 
+# Synchronization
+parking_lot = { workspace = true }
+
 # CLI
 clap = { version = "4", features = ["derive"] }
 

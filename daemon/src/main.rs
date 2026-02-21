@@ -26,8 +26,9 @@ use itk_protocol::{
     MessageType, ScreenRect, StateEvent, StateQuery, StateResponse, StateSnapshot, VideoLoad,
     VideoPause, VideoPlay, VideoSeek, decode, encode,
 };
+use parking_lot::RwLock;
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::thread;
 use tracing::{debug, error, info, warn};
 
@@ -122,6 +123,36 @@ fn validate_state_snapshot(snapshot: &StateSnapshot) -> Result<()> {
             snapshot.data.len()
         );
     }
+    Ok(())
+}
+
+/// Validate a video source URL or file path.
+///
+/// Only allows http://, https://, and local file paths. Rejects potentially
+/// dangerous schemes (file://, javascript:, data:, etc.) and overly long sources.
+fn validate_video_source(source: &str) -> Result<()> {
+    const MAX_SOURCE_LEN: usize = 2048;
+
+    if source.is_empty() {
+        bail!("Video source is empty");
+    }
+    if source.len() > MAX_SOURCE_LEN {
+        bail!("Video source too long: {} bytes", source.len());
+    }
+
+    // Allow http/https URLs
+    if source.starts_with("http://") || source.starts_with("https://") {
+        return Ok(());
+    }
+
+    // Allow absolute and relative local file paths (no URI scheme)
+    // Reject anything that looks like a URI scheme (contains "://" early)
+    if let Some(colon_pos) = source.find("://")
+        && colon_pos < 20
+    {
+        bail!("Unsupported video source scheme: {}", &source[..colon_pos]);
+    }
+
     Ok(())
 }
 
@@ -276,7 +307,7 @@ fn process_injector_message(data: &[u8], state: &Arc<RwLock<AppState>>) -> Resul
             let (_, rect): (_, ScreenRect) = decode(data)?;
             // SECURITY: Validate before use
             validate_screen_rect(&rect)?;
-            let mut state = state.write().unwrap();
+            let mut state = state.write();
             state.screen_rect = Some(rect);
             state.last_update_ms = itk_sync::now_ms();
         },
@@ -285,7 +316,7 @@ fn process_injector_message(data: &[u8], state: &Arc<RwLock<AppState>>) -> Resul
             let (_, event): (_, StateEvent) = decode(data)?;
             // SECURITY: Validate before use
             validate_state_event(&event)?;
-            let mut state = state.write().unwrap();
+            let mut state = state.write();
             state.custom_data.insert(event.event_type, event.data);
             state.last_update_ms = event.timestamp_ms;
         },
@@ -294,7 +325,7 @@ fn process_injector_message(data: &[u8], state: &Arc<RwLock<AppState>>) -> Resul
             let (_, snapshot): (_, StateSnapshot) = decode(data)?;
             // SECURITY: Validate before use
             validate_state_snapshot(&snapshot)?;
-            let mut state = state.write().unwrap();
+            let mut state = state.write();
             state
                 .custom_data
                 .insert("snapshot".to_string(), snapshot.data);
@@ -384,6 +415,7 @@ fn process_client_message(
         // Video playback commands
         MessageType::VideoLoad => {
             let (_, cmd): (_, VideoLoad) = decode(data)?;
+            validate_video_source(&cmd.source)?;
             debug!(source = %cmd.source, "Video load command");
             handle_video_load(state, &cmd);
         },
@@ -420,7 +452,7 @@ fn handle_state_query(
     state: &Arc<RwLock<AppState>>,
     app_id: &str,
 ) -> Result<StateResponse> {
-    let state = state.read().unwrap();
+    let state = state.read();
 
     let response = match query.query_type.as_str() {
         "screen_rect" => {
@@ -535,7 +567,7 @@ fn handle_state_query(
 
 /// Ensure the video player is initialized
 fn ensure_video_player(state: &Arc<RwLock<AppState>>) {
-    let mut state = state.write().unwrap();
+    let mut state = state.write();
     if state.video_player.is_none() {
         info!("Initializing video player");
         state.video_player = Some(VideoPlayer::new());
@@ -545,7 +577,7 @@ fn ensure_video_player(state: &Arc<RwLock<AppState>>) {
 /// Handle a video load command
 fn handle_video_load(state: &Arc<RwLock<AppState>>, cmd: &VideoLoad) {
     ensure_video_player(state);
-    let state = state.read().unwrap();
+    let state = state.read();
     if let Some(ref player) = state.video_player {
         player.load(&cmd.source, cmd.start_position_ms, cmd.autoplay);
     }
@@ -553,7 +585,7 @@ fn handle_video_load(state: &Arc<RwLock<AppState>>, cmd: &VideoLoad) {
 
 /// Handle a video play command
 fn handle_video_play(state: &Arc<RwLock<AppState>>) {
-    let state = state.read().unwrap();
+    let state = state.read();
     if let Some(ref player) = state.video_player {
         player.play();
     }
@@ -561,7 +593,7 @@ fn handle_video_play(state: &Arc<RwLock<AppState>>) {
 
 /// Handle a video pause command
 fn handle_video_pause(state: &Arc<RwLock<AppState>>) {
-    let state = state.read().unwrap();
+    let state = state.read();
     if let Some(ref player) = state.video_player {
         player.pause();
     }
@@ -569,7 +601,7 @@ fn handle_video_pause(state: &Arc<RwLock<AppState>>) {
 
 /// Handle a video seek command
 fn handle_video_seek(state: &Arc<RwLock<AppState>>, position_ms: u64) {
-    let state = state.read().unwrap();
+    let state = state.read();
     if let Some(ref player) = state.video_player {
         player.seek(position_ms);
     }

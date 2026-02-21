@@ -1,10 +1,10 @@
 //! Unix domain socket implementation
 
 use super::{IpcChannel, IpcError, IpcServer, Result, read_message};
+use parking_lot::Mutex;
 use std::fs;
 use std::io::Write;
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Validate and create a socket path from a name.
@@ -182,7 +182,7 @@ impl IpcChannel for UnixSocketClient {
             return Err(IpcError::NotConnected);
         }
 
-        let mut stream = self.stream.lock().unwrap();
+        let mut stream = self.stream.lock();
         stream.write_all(data)?;
         stream.flush()?;
 
@@ -194,7 +194,7 @@ impl IpcChannel for UnixSocketClient {
             return Err(IpcError::NotConnected);
         }
 
-        let mut stream = self.stream.lock().unwrap();
+        let mut stream = self.stream.lock();
         read_message(&mut *stream)
     }
 
@@ -206,7 +206,7 @@ impl IpcChannel for UnixSocketClient {
         }
 
         // Keep lock held during entire operation to prevent race conditions
-        let stream = self.stream.lock().unwrap();
+        let stream = self.stream.lock();
         let fd = stream.as_raw_fd();
         try_recv_with_fd(fd)
     }
@@ -216,9 +216,8 @@ impl IpcChannel for UnixSocketClient {
     }
 
     fn close(&self) {
-        if self.connected.swap(false, Ordering::SeqCst)
-            && let Ok(stream) = self.stream.lock()
-        {
+        if self.connected.swap(false, Ordering::SeqCst) {
+            let stream = self.stream.lock();
             let _ = stream.shutdown(std::net::Shutdown::Both);
         }
     }
@@ -315,7 +314,7 @@ impl IpcChannel for UnixSocketConnection {
             return Err(IpcError::NotConnected);
         }
 
-        let mut stream = self.stream.lock().unwrap();
+        let mut stream = self.stream.lock();
         stream.write_all(data)?;
         stream.flush()?;
 
@@ -327,7 +326,7 @@ impl IpcChannel for UnixSocketConnection {
             return Err(IpcError::NotConnected);
         }
 
-        let mut stream = self.stream.lock().unwrap();
+        let mut stream = self.stream.lock();
         read_message(&mut *stream)
     }
 
@@ -339,7 +338,7 @@ impl IpcChannel for UnixSocketConnection {
         }
 
         // Keep lock held during entire operation to prevent race conditions
-        let stream = self.stream.lock().unwrap();
+        let stream = self.stream.lock();
         let fd = stream.as_raw_fd();
         try_recv_with_fd(fd)
     }
@@ -349,9 +348,8 @@ impl IpcChannel for UnixSocketConnection {
     }
 
     fn close(&self) {
-        if self.connected.swap(false, Ordering::SeqCst)
-            && let Ok(stream) = self.stream.lock()
-        {
+        if self.connected.swap(false, Ordering::SeqCst) {
+            let stream = self.stream.lock();
             let _ = stream.shutdown(std::net::Shutdown::Both);
         }
     }

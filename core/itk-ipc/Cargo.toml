@@ -13,6 +13,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 cfg-if = { workspace = true }
+parking_lot = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true }

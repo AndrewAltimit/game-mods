@@ -14,6 +14,11 @@
 
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use thiserror::Error;
+use tracing::warn;
+
+/// Maximum frame dimension (width or height) in pixels.
+/// 8192x8192 RGBA = 256 MB per frame, 768 MB for triple buffer.
+pub const MAX_FRAME_DIMENSION: u32 = 8192;
 
 /// Shared memory errors
 #[derive(Error, Debug)]
@@ -229,8 +234,10 @@ pub struct SeqlockHeader {
     pub content_id_hash: AtomicU64,
     /// Total duration in milliseconds (0 if unknown/live)
     pub duration_ms: AtomicU64,
+    /// Active writer count (should always be 0 or 1)
+    pub writer_count: AtomicU32,
     /// Padding to cache line (64 bytes)
-    _padding: [u8; 12],
+    _padding: [u8; 8],
 }
 
 impl SeqlockHeader {
@@ -259,6 +266,7 @@ impl SeqlockHeader {
             (*header).is_playing = AtomicU32::new(0);
             (*header).content_id_hash = AtomicU64::new(0);
             (*header).duration_ms = AtomicU64::new(0);
+            (*header).writer_count = AtomicU32::new(0);
 
             &*header
         }
@@ -280,6 +288,18 @@ impl SeqlockHeader {
     /// reordered before the sequence increment. This ensures readers see
     /// the odd sequence before any new data is written.
     pub fn begin_write(&self) {
+        let prev = self.writer_count.fetch_add(1, Ordering::Relaxed);
+        debug_assert_eq!(
+            prev, 0,
+            "Multiple concurrent writers detected (count was {prev}). \
+             Seqlock requires single-writer only."
+        );
+        if prev != 0 {
+            warn!(
+                writer_count = prev + 1,
+                "Multiple concurrent seqlock writers detected — data may be corrupted"
+            );
+        }
         self.seq.fetch_add(1, Ordering::Acquire);
     }
 
@@ -289,6 +309,7 @@ impl SeqlockHeader {
     /// before the even sequence number.
     pub fn end_write(&self) {
         self.seq.fetch_add(1, Ordering::Release);
+        self.writer_count.fetch_sub(1, Ordering::Relaxed);
     }
 
     /// Read the current sequence number with Acquire ordering
@@ -375,6 +396,11 @@ impl SeqlockHeader {
             }
             std::hint::spin_loop();
         }
+        warn!(
+            max_attempts,
+            seq = self.seq.load(Ordering::Relaxed),
+            "seqlock read contention exceeded max attempts"
+        );
         Err(ShmemError::SeqlockContention)
     }
 }
@@ -410,8 +436,15 @@ pub struct FrameBuffer {
 impl FrameBuffer {
     /// Calculate total shared memory size needed for given frame dimensions
     ///
-    /// Returns an error if the dimensions would cause arithmetic overflow.
+    /// Returns an error if the dimensions exceed MAX_FRAME_DIMENSION or would
+    /// cause arithmetic overflow.
     pub fn calculate_size(width: u32, height: u32) -> Result<usize> {
+        if width > MAX_FRAME_DIMENSION || height > MAX_FRAME_DIMENSION {
+            return Err(ShmemError::SizeOverflow { width, height });
+        }
+        if width == 0 || height == 0 {
+            return Err(ShmemError::SizeOverflow { width, height });
+        }
         let frame_size = (width as usize)
             .checked_mul(height as usize)
             .and_then(|s| s.checked_mul(4)) // RGBA

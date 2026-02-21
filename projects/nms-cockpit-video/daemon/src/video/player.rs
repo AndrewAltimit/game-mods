@@ -4,22 +4,18 @@ use super::audio::AudioPlayer;
 use super::state::{PlayerCommand, PlayerState, VideoInfo};
 use itk_protocol::{VideoMetadata, VideoState};
 use itk_video::{DecodedFrame, FrameWriter, StreamSource, VideoDecoder};
+use parking_lot::Mutex;
+use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 
-/// Lock the player state mutex, recovering from poisoning.
+/// Lock the player state mutex.
 ///
-/// A poisoned mutex means a thread panicked while holding the lock.
-/// We recover by taking the inner data since partial state is better
-/// than crashing the daemon.
-fn lock_state(mutex: &Mutex<PlayerState>) -> std::sync::MutexGuard<'_, PlayerState> {
-    mutex.lock().unwrap_or_else(|poisoned| {
-        warn!("Player state mutex was poisoned, recovering");
-        poisoned.into_inner()
-    })
+/// parking_lot::Mutex never poisons, so this always succeeds.
+fn lock_state(mutex: &Mutex<PlayerState>) -> parking_lot::MutexGuard<'_, PlayerState> {
+    mutex.lock()
 }
 
 /// Default output width for video frames.

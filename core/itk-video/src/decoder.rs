@@ -9,17 +9,24 @@ use ffmpeg_next::format::context::Input as FormatContext;
 use ffmpeg_next::media::Type as MediaType;
 use ffmpeg_next::util::frame::video::Video as VideoFrame;
 use ffmpeg_next::{Codec, Packet, Rational, codec, decoder};
-use std::sync::Once;
+use std::sync::OnceLock;
 use tracing::{debug, info, warn};
 
-/// Initialize ffmpeg (called once).
-static FFMPEG_INIT: Once = Once::new();
+/// Initialize ffmpeg (called once), returning any initialization error.
+static FFMPEG_INIT: OnceLock<Result<(), String>> = OnceLock::new();
 
-fn init_ffmpeg() {
-    FFMPEG_INIT.call_once(|| {
-        ffmpeg_next::init().expect("failed to initialize ffmpeg");
-        info!("ffmpeg initialized");
+fn init_ffmpeg() -> VideoResult<()> {
+    let result = FFMPEG_INIT.get_or_init(|| {
+        ffmpeg_next::init()
+            .map(|()| {
+                info!("ffmpeg initialized");
+            })
+            .map_err(|e| format!("failed to initialize ffmpeg: {e}"))
     });
+    match result {
+        Ok(()) => Ok(()),
+        Err(msg) => Err(VideoError::Ffmpeg(msg.clone())),
+    }
 }
 
 /// A decoded video frame with metadata.
@@ -64,7 +71,7 @@ impl VideoDecoder {
 
     /// Create a new decoder with custom output dimensions.
     pub fn with_size(source: StreamSource, width: u32, height: u32) -> VideoResult<Self> {
-        init_ffmpeg();
+        init_ffmpeg()?;
 
         // Handle YouTube URLs
         #[allow(unused_mut)]
