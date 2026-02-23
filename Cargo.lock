@@ -1481,7 +1481,7 @@ dependencies = [
 
 [[package]]
 name = "itk-daemon"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "itk-ipc",
@@ -1499,7 +1499,7 @@ dependencies = [
 
 [[package]]
 name = "itk-ipc"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "cfg-if",
  "itk-protocol",
@@ -1515,7 +1515,7 @@ dependencies = [
 
 [[package]]
 name = "itk-ld-preload"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "itk-ipc",
  "itk-protocol",
@@ -1525,7 +1525,7 @@ dependencies = [
 
 [[package]]
 name = "itk-native-dll"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "itk-ipc",
  "itk-protocol",
@@ -1535,7 +1535,7 @@ dependencies = [
 
 [[package]]
 name = "itk-net"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "bincode",
  "itk-protocol",
@@ -1551,7 +1551,7 @@ dependencies = [
 
 [[package]]
 name = "itk-overlay"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -1571,7 +1571,7 @@ dependencies = [
 
 [[package]]
 name = "itk-protocol"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "bitcode",
  "crc32fast",
@@ -1582,7 +1582,7 @@ dependencies = [
 
 [[package]]
 name = "itk-shmem"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "cfg-if",
  "libc",
@@ -1595,7 +1595,7 @@ dependencies = [
 
 [[package]]
 name = "itk-sync"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "itk-protocol",
  "thiserror 1.0.69",
@@ -1604,7 +1604,7 @@ dependencies = [
 
 [[package]]
 name = "itk-video"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "ffmpeg-next",
@@ -1830,7 +1830,7 @@ dependencies = [
 
 [[package]]
 name = "mem-scanner"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2041,7 +2041,7 @@ dependencies = [
 
 [[package]]
 name = "nms-cockpit-injector"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "ash 0.38.0+1.3.281",
  "itk-ipc",
@@ -2057,7 +2057,7 @@ dependencies = [
 
 [[package]]
 name = "nms-video-daemon"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2080,7 +2080,7 @@ dependencies = [
 
 [[package]]
 name = "nms-video-launcher"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "itk-ipc",
  "itk-protocol",
@@ -2089,7 +2089,7 @@ dependencies = [
 
 [[package]]
 name = "nms-video-overlay"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "bytemuck",
