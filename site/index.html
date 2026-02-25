@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ITK — Injection Toolkit Framework</title>
+  <meta name="description" content="A Rust framework for game modification. Minimal injection, maximal external processing.">
+  <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <!-- ── Navigation ──────────────────────────────────────────────── -->
+  <nav class="navbar">
+    <div class="container">
+      <a href="index.html" class="nav-logo"><span>ITK</span> Framework</a>
+      <div class="nav-links">
+        <a href="architecture.html">Architecture</a>
+        <a href="nms-cockpit-video.html">NMS Cockpit Video</a>
+        <a href="docs.html">Docs</a>
+        <a href="https://github.com/AndrewAltimit/game-mods" class="github-link" target="_blank" rel="noopener">
+          <svg viewBox="0 0 16 16" aria-label="GitHub"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        </a>
+      </div>
+      <button class="hamburger" aria-label="Toggle navigation">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <div class="nav-overlay">
+    <a href="index.html">Home</a>
+    <a href="architecture.html">Architecture</a>
+    <a href="nms-cockpit-video.html">NMS Cockpit Video</a>
+    <a href="docs.html">Docs</a>
+    <a href="https://github.com/AndrewAltimit/game-mods" target="_blank" rel="noopener">GitHub</a>
+  </div>
+
+  <!-- ── Hero ────────────────────────────────────────────────────── -->
+  <section class="hero animated-gradient">
+    <div class="container hero-content">
+      <h1 class="fade-in">The <span class="gradient">Injection Toolkit</span><br>Framework</h1>
+      <p class="hero-tagline fade-in">A Rust framework for game modification. Minimal injection, maximal external processing.</p>
+      <div class="hero-ctas fade-in">
+        <a href="architecture.html" class="btn btn-primary">Explore Architecture</a>
+        <a href="https://github.com/AndrewAltimit/game-mods" class="btn btn-secondary" target="_blank" rel="noopener">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          View on GitHub
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Stats Strip ─────────────────────────────────────────────── -->
+  <section class="stats-strip">
+    <div class="container">
+      <div class="stats-grid">
+        <div class="stat-card fade-in">
+          <div class="stat-value">20k+</div>
+          <div class="stat-label">Lines of Rust</div>
+        </div>
+        <div class="stat-card fade-in">
+          <div class="stat-value">13</div>
+          <div class="stat-label">Workspace Crates</div>
+        </div>
+        <div class="stat-card fade-in">
+          <div class="stat-value">6</div>
+          <div class="stat-label">Core ITK Libraries</div>
+        </div>
+        <div class="stat-card fade-in">
+          <div class="stat-value">v1.0</div>
+          <div class="stat-label">Current Release</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── What is ITK? ────────────────────────────────────────────── -->
+  <section>
+    <div class="container">
+      <div class="section-label fade-in">Philosophy</div>
+      <h2 class="section-title fade-in">What is the Injection Toolkit?</h2>
+      <div class="section-desc fade-in">
+        <p>ITK is a Rust framework for building game modifications that follow a <strong>"minimal injection, maximal external processing"</strong> architecture.</p>
+      </div>
+      <div class="card-grid">
+        <div class="card fade-in">
+          <h3>Minimal Injection</h3>
+          <p>Only the thinnest possible layer runs inside the target process &mdash; Vulkan hooks and state extraction. No complex logic, no blocking operations, under 5 MB memory budget. If the injector crashes, the game continues.</p>
+        </div>
+        <div class="card fade-in">
+          <h3>External Processing</h3>
+          <p>All heavy work &mdash; video decoding, audio playback, network sync &mdash; runs in separate daemon and overlay processes. They communicate with the injector through IPC (named pipes / Unix sockets) and shared memory with lock-free seqlock synchronization.</p>
+        </div>
+        <div class="card fade-in">
+          <h3>Crash Isolation</h3>
+          <p>Each component runs in its own process. An overlay crash doesn't affect the game. A daemon failure doesn't crash the injector. Components detect failures and degrade gracefully, serving stale state rather than crashing.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Core Libraries ──────────────────────────────────────────── -->
+  <section style="background: var(--bg-raised);">
+    <div class="container">
+      <div class="section-label fade-in">Core Libraries</div>
+      <h2 class="section-title fade-in">Six Foundational Crates</h2>
+      <p class="section-desc fade-in">The building blocks that power every ITK project.</p>
+      <div class="card-grid">
+        <div class="card fade-in">
+          <div class="card-icon">P</div>
+          <h3>itk-protocol</h3>
+          <p class="mono mb-2">20-byte header + bitcode payload</p>
+          <p>Wire protocol with magic bytes, versioning, CRC32 validation, and 20 message types. All payloads validated for NaN, bounds, and size limits.</p>
+        </div>
+        <div class="card fade-in">
+          <div class="card-icon">S</div>
+          <h3>itk-shmem</h3>
+          <p class="mono mb-2">Cross-platform shared memory</p>
+          <p>Seqlock-based single-writer/multi-reader shared memory with triple-buffered frame transport. Supports up to 4K resolution at 256 MB per frame buffer.</p>
+        </div>
+        <div class="card fade-in">
+          <div class="card-icon">I</div>
+          <h3>itk-ipc</h3>
+          <p class="mono mb-2">Named pipes &amp; Unix sockets</p>
+          <p>Trait-based IPC abstraction with platform-specific implementations. Windows named pipes and Linux Unix domain sockets behind a unified API.</p>
+        </div>
+        <div class="card fade-in">
+          <div class="card-icon">C</div>
+          <h3>itk-sync</h3>
+          <p class="mono mb-2">Clock sync &amp; drift correction</p>
+          <p>NTP-lite clock synchronization with reference-point playback model. Drift corrector with gentle (0.98-1.02x), moderate (0.95-1.05x), and hard-seek zones.</p>
+        </div>
+        <div class="card fade-in">
+          <div class="card-icon">V</div>
+          <h3>itk-video</h3>
+          <p class="mono mb-2">ffmpeg-next video pipeline</p>
+          <p>Decode pipeline with D3D11VA hardware acceleration, software fallback, RGBA scaling, and YouTube URL extraction via yt-dlp integration.</p>
+        </div>
+        <div class="card fade-in">
+          <div class="card-icon">N</div>
+          <h3>itk-net</h3>
+          <p class="mono mb-2">P2P networking via laminar</p>
+          <p>Session management with UDP broadcast discovery, leader election, reliable command transport, and unreliable state sync at 500ms intervals.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Featured Project ────────────────────────────────────────── -->
+  <section>
+    <div class="container">
+      <div class="section-label fade-in">Featured Project</div>
+      <h2 class="section-title fade-in">NMS Cockpit Video</h2>
+      <div class="featured-card fade-in">
+        <div class="featured-info">
+          <h3>Watch videos inside your No Man's Sky cockpit</h3>
+          <p>A video player that renders directly inside your spaceship cockpit using Vulkan injection, supporting both desktop and VR. Decode video with hardware acceleration, render as a textured quad in 3D space, and sync playback across multiplayer sessions.</p>
+          <div class="feature-list">
+            <span class="pill pill-accent">Vulkan Injection</span>
+            <span class="pill pill-accent">VR Support</span>
+            <span class="pill pill-accent">YouTube Playback</span>
+            <span class="pill pill-accent">Multiplayer Sync</span>
+          </div>
+          <a href="nms-cockpit-video.html" class="btn btn-primary">Learn More</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Tech Stack ──────────────────────────────────────────────── -->
+  <section style="background: var(--bg-raised);">
+    <div class="container text-center">
+      <div class="section-label fade-in">Technology</div>
+      <h2 class="section-title fade-in">Built With</h2>
+      <div class="pills-wrap mt-4 fade-in">
+        <span class="pill">Rust</span>
+        <span class="pill">Vulkan (ash)</span>
+        <span class="pill">wgpu</span>
+        <span class="pill">egui</span>
+        <span class="pill">ffmpeg-next</span>
+        <span class="pill">laminar</span>
+        <span class="pill">tokio</span>
+        <span class="pill">retour</span>
+        <span class="pill">bitcode</span>
+        <span class="pill">cpal</span>
+        <span class="pill">OpenVR</span>
+        <span class="pill">naga</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Footer ──────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <div class="container">
+      <p>Dual-licensed under <strong>Unlicense</strong> and <strong>MIT</strong></p>
+      <p><a href="https://github.com/AndrewAltimit/game-mods" target="_blank" rel="noopener">github.com/AndrewAltimit/game-mods</a></p>
+      <p class="footer-ai">Code authored by AI agents under human direction</p>
+    </div>
+  </footer>
+
+  <script src="js/main.js"></script>
+</body>
+</html>

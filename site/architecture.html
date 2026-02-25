@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Architecture — ITK Framework</title>
+  <meta name="description" content="Deep-dive into the ITK framework architecture: minimal injection, external processing, IPC, and shared memory.">
+  <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <!-- ── Navigation ──────────────────────────────────────────────── -->
+  <nav class="navbar">
+    <div class="container">
+      <a href="index.html" class="nav-logo"><span>ITK</span> Framework</a>
+      <div class="nav-links">
+        <a href="architecture.html" class="active">Architecture</a>
+        <a href="nms-cockpit-video.html">NMS Cockpit Video</a>
+        <a href="docs.html">Docs</a>
+        <a href="https://github.com/AndrewAltimit/game-mods" class="github-link" target="_blank" rel="noopener">
+          <svg viewBox="0 0 16 16" aria-label="GitHub"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        </a>
+      </div>
+      <button class="hamburger" aria-label="Toggle navigation">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <div class="nav-overlay">
+    <a href="index.html">Home</a>
+    <a href="architecture.html">Architecture</a>
+    <a href="nms-cockpit-video.html">NMS Cockpit Video</a>
+    <a href="docs.html">Docs</a>
+    <a href="https://github.com/AndrewAltimit/game-mods" target="_blank" rel="noopener">GitHub</a>
+  </div>
+
+  <!-- ── Breadcrumbs ─────────────────────────────────────────────── -->
+  <div class="breadcrumbs container">
+    <a href="index.html">Home</a> <span>/</span> Architecture
+  </div>
+
+  <!-- ── Page Header ─────────────────────────────────────────────── -->
+  <section class="page-header">
+    <div class="container">
+      <div class="section-label fade-in">Architecture</div>
+      <h1 class="fade-in">System Architecture</h1>
+      <p class="fade-in">Minimal injection, maximal external processing. Every design decision optimizes for safety, isolation, and performance.</p>
+    </div>
+  </section>
+
+  <!-- ── Design Philosophy ───────────────────────────────────────── -->
+  <section>
+    <div class="container">
+      <h2 class="section-title fade-in">Design Principles</h2>
+      <div class="principle-grid">
+        <div class="principle-card fade-in">
+          <h3>Inject Only What's Necessary</h3>
+          <p>The injected DLL/SO contains only Vulkan hooks and minimal state extraction. No complex processing, no blocking operations, no network communication. Under 5 MB memory budget.</p>
+        </div>
+        <div class="principle-card fade-in">
+          <h3>Process Externally</h3>
+          <p>Video decoding, audio playback, multiplayer networking, and all heavy computation run in separate daemon and overlay processes outside the target game.</p>
+        </div>
+        <div class="principle-card fade-in">
+          <h3>Communicate via IPC</h3>
+          <p>Components exchange data through named pipes (Windows) or Unix sockets (Linux) for commands, and lock-free seqlock shared memory for high-throughput frame data.</p>
+        </div>
+        <div class="principle-card fade-in">
+          <h3>Fail Gracefully</h3>
+          <p>Process isolation means crashes are contained. An overlay crash doesn't affect the game. A daemon failure lets the injector continue. Components detect failures and degrade to stale state.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── System Overview Diagram ─────────────────────────────────── -->
+  <section style="background: var(--bg-raised);">
+    <div class="container">
+      <h2 class="section-title fade-in">System Overview</h2>
+      <p class="section-desc fade-in">The launcher orchestrates three independent processes that communicate through IPC and shared memory.</p>
+      <div class="diagram-wrap fade-in">
+        <svg viewBox="0 0 800 400" xmlns="http://www.w3.org/2000/svg" style="max-width: 800px;">
+          <defs>
+            <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#7c5bf0"/>
+              <stop offset="100%" stop-color="#5b8cf0"/>
+            </linearGradient>
+            <filter id="glow">
+              <feGaussianBlur stdDeviation="2" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+
+          <!-- Launcher box -->
+          <rect x="300" y="20" width="200" height="50" rx="8" fill="none" stroke="url(#grad1)" stroke-width="2"/>
+          <text x="400" y="50" text-anchor="middle" fill="#fff" font-family="Inter, sans-serif" font-size="14" font-weight="600">Launcher</text>
+          <text x="400" y="88" text-anchor="middle" fill="#71717a" font-family="Inter, sans-serif" font-size="11">orchestration</text>
+
+          <!-- Connecting lines from launcher -->
+          <line x1="340" y1="70" x2="150" y2="140" stroke="#3f3f46" stroke-width="1.5"/>
+          <line x1="400" y1="70" x2="400" y2="140" stroke="#3f3f46" stroke-width="1.5"/>
+          <line x1="460" y1="70" x2="650" y2="140" stroke="#3f3f46" stroke-width="1.5"/>
+
+          <!-- Daemon box -->
+          <rect x="50" y="140" width="200" height="60" rx="8" fill="#16161a" stroke="#27272a" stroke-width="1.5"/>
+          <text x="150" y="168" text-anchor="middle" fill="#fff" font-family="Inter, sans-serif" font-size="14" font-weight="600">Daemon</text>
+          <text x="150" y="186" text-anchor="middle" fill="#a1a1aa" font-family="Inter, sans-serif" font-size="11">video decode, audio, IPC server</text>
+
+          <!-- Injector box -->
+          <rect x="300" y="140" width="200" height="60" rx="8" fill="#16161a" stroke="#27272a" stroke-width="1.5"/>
+          <text x="400" y="168" text-anchor="middle" fill="#fff" font-family="Inter, sans-serif" font-size="14" font-weight="600">Injector</text>
+          <text x="400" y="186" text-anchor="middle" fill="#a1a1aa" font-family="Inter, sans-serif" font-size="11">Vulkan hooks, state extraction</text>
+
+          <!-- Overlay box -->
+          <rect x="550" y="140" width="200" height="60" rx="8" fill="#16161a" stroke="#27272a" stroke-width="1.5"/>
+          <text x="650" y="168" text-anchor="middle" fill="#fff" font-family="Inter, sans-serif" font-size="14" font-weight="600">Overlay</text>
+          <text x="650" y="186" text-anchor="middle" fill="#a1a1aa" font-family="Inter, sans-serif" font-size="11">egui + wgpu, desktop rendering</text>
+
+          <!-- Shared Memory block -->
+          <rect x="250" y="260" width="300" height="50" rx="8" fill="none" stroke="url(#grad1)" stroke-width="1.5" stroke-dasharray="6 3"/>
+          <text x="400" y="290" text-anchor="middle" fill="#7c5bf0" font-family="JetBrains Mono, monospace" font-size="12">Shared Memory (seqlock)</text>
+
+          <!-- IPC arrows -->
+          <line x1="250" y1="180" x2="300" y2="180" stroke="#5b8cf0" stroke-width="1.5" class="flow-line" filter="url(#glow)"/>
+          <text x="275" y="172" text-anchor="middle" fill="#5b8cf0" font-family="JetBrains Mono, monospace" font-size="9">IPC</text>
+
+          <!-- Shmem arrows -->
+          <line x1="150" y1="200" x2="150" y2="260" stroke="#7c5bf0" stroke-width="1.5" class="flow-line" filter="url(#glow)"/>
+          <line x1="150" y1="260" x2="250" y2="280" stroke="#7c5bf0" stroke-width="1.5"/>
+          <text x="140" y="235" text-anchor="end" fill="#7c5bf0" font-family="JetBrains Mono, monospace" font-size="9">write</text>
+
+          <line x1="650" y1="200" x2="650" y2="260" stroke="#5b8cf0" stroke-width="1.5" class="flow-line" filter="url(#glow)"/>
+          <line x1="650" y1="260" x2="550" y2="280" stroke="#5b8cf0" stroke-width="1.5"/>
+          <text x="660" y="235" fill="#5b8cf0" font-family="JetBrains Mono, monospace" font-size="9">read</text>
+
+          <line x1="400" y1="200" x2="400" y2="260" stroke="#5b8cf0" stroke-width="1.5" class="flow-line" filter="url(#glow)"/>
+          <text x="412" y="235" fill="#5b8cf0" font-family="JetBrains Mono, monospace" font-size="9">read</text>
+
+          <!-- Target Game box -->
+          <rect x="300" y="340" width="200" height="40" rx="6" fill="none" stroke="#3f3f46" stroke-width="1" stroke-dasharray="4 2"/>
+          <text x="400" y="365" text-anchor="middle" fill="#71717a" font-family="Inter, sans-serif" font-size="12">Target Game Process</text>
+
+          <!-- Injector inside game indicator -->
+          <line x1="400" y1="200" x2="400" y2="340" stroke="#3f3f46" stroke-width="1" stroke-dasharray="4 4" opacity="0.4"/>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Component Responsibilities ──────────────────────────────── -->
+  <section>
+    <div class="container">
+      <h2 class="section-title fade-in">Component Responsibilities</h2>
+      <p class="section-desc fade-in">Each component has a clear, bounded role. Here's what each does &mdash; and what it deliberately does not.</p>
+      <div class="three-col">
+        <div class="card fade-in">
+          <h3>Injector</h3>
+          <h4 style="color: #4ade80; font-size: 0.8rem; margin: 12px 0 8px; font-weight: 600;">DOES</h4>
+          <ul class="does-list">
+            <li>Hook Vulkan/OpenVR calls</li>
+            <li>Extract minimal game state</li>
+            <li>Send state updates via IPC</li>
+            <li>Render textured quads</li>
+            <li>Read frames from shared memory</li>
+          </ul>
+          <h4 style="color: #f87171; font-size: 0.8rem; margin: 12px 0 8px; font-weight: 600;">DOES NOT</h4>
+          <ul class="doesnt-list">
+            <li>Decode video or audio</li>
+            <li>Make network requests</li>
+            <li>Perform complex computation</li>
+            <li>Block the render thread</li>
+          </ul>
+        </div>
+        <div class="card fade-in">
+          <h3>Daemon</h3>
+          <h4 style="color: #4ade80; font-size: 0.8rem; margin: 12px 0 8px; font-weight: 600;">DOES</h4>
+          <ul class="does-list">
+            <li>Decode video (hw accelerated)</li>
+            <li>Play audio via cpal</li>
+            <li>Write frames to shared memory</li>
+            <li>Serve IPC commands</li>
+            <li>Handle multiplayer sync</li>
+          </ul>
+          <h4 style="color: #f87171; font-size: 0.8rem; margin: 12px 0 8px; font-weight: 600;">DOES NOT</h4>
+          <ul class="doesnt-list">
+            <li>Inject code into games</li>
+            <li>Render graphics</li>
+            <li>Touch the target process</li>
+            <li>Require elevated privileges</li>
+          </ul>
+        </div>
+        <div class="card fade-in">
+          <h3>Overlay</h3>
+          <h4 style="color: #4ade80; font-size: 0.8rem; margin: 12px 0 8px; font-weight: 600;">DOES</h4>
+          <ul class="does-list">
+            <li>Render content via wgpu</li>
+            <li>Provide egui controls</li>
+            <li>Read frames from shared memory</li>
+            <li>Handle click-through</li>
+          </ul>
+          <h4 style="color: #f87171; font-size: 0.8rem; margin: 12px 0 8px; font-weight: 600;">DOES NOT</h4>
+          <ul class="doesnt-list">
+            <li>Inject code</li>
+            <li>Decode video/audio</li>
+            <li>Do heavy computation</li>
+            <li>Affect game stability</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Data Flow ───────────────────────────────────────────────── -->
+  <section style="background: var(--bg-raised);">
+    <div class="container">
+      <h2 class="section-title fade-in">Data Flow</h2>
+      <div class="card-grid">
+        <div class="card fade-in">
+          <h3>State Extraction Flow</h3>
+          <div style="margin-top: 16px;">
+            <div class="pill" style="margin: 4px 0; display: block; text-align: center;">Injector hooks Vulkan call</div>
+            <div style="text-align: center; color: var(--text-dim);">&darr;</div>
+            <div class="pill" style="margin: 4px 0; display: block; text-align: center;">Extract camera matrix + game state</div>
+            <div style="text-align: center; color: var(--text-dim);">&darr;</div>
+            <div class="pill" style="margin: 4px 0; display: block; text-align: center;">Serialize via itk-protocol</div>
+            <div style="text-align: center; color: var(--text-dim);">&darr;</div>
+            <div class="pill" style="margin: 4px 0; display: block; text-align: center;">Send over IPC to Daemon</div>
+            <div style="text-align: center; color: var(--text-dim);">&darr;</div>
+            <div class="pill" style="margin: 4px 0; display: block; text-align: center;">Daemon validates + aggregates</div>
+          </div>
+        </div>
+        <div class="card fade-in">
+          <h3>Frame Data Flow</h3>
+          <div style="margin-top: 16px;">
+            <div class="pill" style="margin: 4px 0; display: block; text-align: center;">Daemon decodes video frame</div>
+            <div style="text-align: center; color: var(--text-dim);">&darr;</div>
+            <div class="pill" style="margin: 4px 0; display: block; text-align: center;">Scale to 1280&times;720 RGBA</div>
+            <div style="text-align: center; color: var(--text-dim);">&darr;</div>
+            <div class="pill" style="margin: 4px 0; display: block; text-align: center;">Write to triple buffer (seqlock)</div>
+            <div style="text-align: center; color: var(--text-dim);">&darr;</div>
+            <div class="pill" style="margin: 4px 0; display: block; text-align: center;">Injector/Overlay reads latest</div>
+            <div style="text-align: center; color: var(--text-dim);">&darr;</div>
+            <div class="pill" style="margin: 4px 0; display: block; text-align: center;">Upload to GPU texture + render</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Wire Protocol ───────────────────────────────────────────── -->
+  <section>
+    <div class="container">
+      <h2 class="section-title fade-in">Wire Protocol</h2>
+      <p class="section-desc fade-in">Every IPC message uses a 20-byte header followed by a bitcode-serialized payload. CRC32 covers the entire payload for integrity.</p>
+
+      <div class="header-visual fade-in">
+        <div class="header-field">
+          <div class="field-name">Magic</div>
+          <div class="field-size">4 bytes &middot; "ITKP"</div>
+        </div>
+        <div class="header-field">
+          <div class="field-name">Version</div>
+          <div class="field-size">4 bytes &middot; u32</div>
+        </div>
+        <div class="header-field">
+          <div class="field-name">MsgType</div>
+          <div class="field-size">4 bytes &middot; u32</div>
+        </div>
+        <div class="header-field">
+          <div class="field-name">PayloadLen</div>
+          <div class="field-size">4 bytes &middot; u32</div>
+        </div>
+        <div class="header-field">
+          <div class="field-name">CRC32</div>
+          <div class="field-size">4 bytes &middot; u32</div>
+        </div>
+      </div>
+
+      <h3 class="fade-in" style="margin-top: 40px;">Message Types</h3>
+      <div class="table-wrap fade-in" style="margin-top: 16px;">
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Name</th><th>Direction</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>0-1</td><td><code>Ping / Pong</code></td><td>Bidirectional</td><td>Health check and latency measurement</td></tr>
+            <tr><td>10-12</td><td><code>ScreenRect / WindowState / OverlayUpdate</code></td><td>Injector &rarr; Daemon</td><td>Window geometry and overlay positioning</td></tr>
+            <tr><td>20-23</td><td><code>StateSnapshot / Event / Query / Response</code></td><td>Bidirectional</td><td>Game state exchange and queries</td></tr>
+            <tr><td>30-32</td><td><code>SyncState / ClockPing / ClockPong</code></td><td>P2P</td><td>Clock synchronization and playback sync</td></tr>
+            <tr><td>40-46</td><td><code>Video*</code></td><td>Various</td><td>Video load, play, pause, seek, state, metadata, error</td></tr>
+            <tr><td>255</td><td><code>Error</code></td><td>Any</td><td>Error response with code and message</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Seqlock Visualization ───────────────────────────────────── -->
+  <section style="background: var(--bg-raised);">
+    <div class="container">
+      <h2 class="section-title fade-in">Seqlock Shared Memory</h2>
+      <p class="section-desc fade-in">A single-writer, multi-reader lock-free synchronization primitive. The writer increments a sequence counter before and after writes; readers retry if the counter changed during their read.</p>
+
+      <div class="diagram-wrap fade-in">
+        <div style="max-width: 600px; margin: 0 auto;">
+          <div class="timeline-row">
+            <div class="timeline-label">Writer</div>
+            <div class="timeline-bar">
+              <div class="timeline-segment seg-write" style="left: 5%; width: 25%;">seq++ write seq++</div>
+              <div class="timeline-segment seg-write" style="left: 55%; width: 25%;">seq++ write seq++</div>
+            </div>
+          </div>
+          <div class="timeline-row">
+            <div class="timeline-label">Reader</div>
+            <div class="timeline-bar">
+              <div class="timeline-segment seg-retry" style="left: 10%; width: 18%;">retry (torn)</div>
+              <div class="timeline-segment seg-read" style="left: 38%; width: 15%;">read OK</div>
+              <div class="timeline-segment seg-read" style="left: 82%; width: 15%;">read OK</div>
+            </div>
+          </div>
+        </div>
+        <p style="text-align: center; margin-top: 16px; font-size: 0.8rem; color: var(--text-dim);">Odd sequence = write in progress. Reader spins until two consecutive even reads match.</p>
+      </div>
+
+      <div style="margin-top: 24px;" class="fade-in">
+        <h3>Memory Layout</h3>
+        <pre><code>[SeqlockHeader: 64 bytes][Buffer 0: W*H*4][Buffer 1: W*H*4][Buffer 2: W*H*4]
+
+SeqlockHeader (64 bytes, cache-line aligned):
+  seq:             AtomicU32   // odd = writing, even = consistent
+  read_idx:        AtomicU32   // current read buffer (0-2)
+  pts_ms:          AtomicU64   // presentation timestamp
+  frame_width:     AtomicU32
+  frame_height:    AtomicU32
+  is_playing:      AtomicU32
+  content_id_hash: AtomicU64
+  duration_ms:     AtomicU64
+  writer_count:    AtomicU32   // multi-writer detection
+  _padding:        [u8; 8]
+
+Known sizes:
+  720p  = 64 + 11,059,200 bytes  (~11 MB)
+  1080p = 64 + 24,883,200 bytes  (~24 MB)
+  4K    = 64 + 99,532,800 bytes  (~95 MB)</code></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Platform Abstraction ────────────────────────────────────── -->
+  <section>
+    <div class="container">
+      <h2 class="section-title fade-in">Platform Abstraction</h2>
+      <p class="section-desc fade-in">ITK uses <code>cfg_if!</code> blocks to abstract platform differences behind unified traits.</p>
+      <div class="table-wrap fade-in">
+        <table class="comparison-table">
+          <thead>
+            <tr><th>Subsystem</th><th>Windows</th><th>Linux</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>IPC Transport</td><td>Named Pipes (<code>\\.\pipe\itk_*</code>)</td><td>Unix Domain Sockets (<code>/tmp/itk_*.sock</code>)</td></tr>
+            <tr><td>Shared Memory</td><td><code>CreateFileMappingW</code> + <code>MapViewOfFile</code></td><td><code>shm_open</code> + <code>mmap</code></td></tr>
+            <tr><td>Injection</td><td>Native DLL (<code>retour</code> detours)</td><td><code>LD_PRELOAD</code> shared object</td></tr>
+            <tr><td>Overlay Click-Through</td><td><code>WS_EX_TRANSPARENT</code></td><td>X11 SHAPE extension / Wayland layer-shell</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Security Model ──────────────────────────────────────────── -->
+  <section style="background: var(--bg-raised);">
+    <div class="container">
+      <h2 class="section-title fade-in">Security Model</h2>
+      <p class="section-desc fade-in">The injector runs inside an untrusted process. All data from it is treated as potentially malicious.</p>
+
+      <div class="card-grid">
+        <div class="card fade-in">
+          <h3>Trust Boundaries</h3>
+          <p style="margin-top: 12px;"><strong style="color: #f87171;">Untrusted:</strong> Injector (runs inside target game process)</p>
+          <p style="margin-top: 8px;"><strong style="color: #4ade80;">Trusted:</strong> Daemon and Overlay (separate processes under our control)</p>
+          <p style="margin-top: 12px;">All IPC messages from the injector pass through validation before processing.</p>
+        </div>
+        <div class="card fade-in">
+          <h3>Defense in Depth</h3>
+          <ul style="margin-top: 12px; padding-left: 16px;">
+            <li style="list-style: disc; color: var(--text-muted); margin-bottom: 6px; font-size: 0.875rem;">Magic bytes verification ("ITKP")</li>
+            <li style="list-style: disc; color: var(--text-muted); margin-bottom: 6px; font-size: 0.875rem;">Protocol version check</li>
+            <li style="list-style: disc; color: var(--text-muted); margin-bottom: 6px; font-size: 0.875rem;">CRC32 integrity on all payloads</li>
+            <li style="list-style: disc; color: var(--text-muted); margin-bottom: 6px; font-size: 0.875rem;">Payload size limit: 1 MB max</li>
+            <li style="list-style: disc; color: var(--text-muted); margin-bottom: 6px; font-size: 0.875rem;">String length cap: 256 bytes</li>
+            <li style="list-style: disc; color: var(--text-muted); margin-bottom: 6px; font-size: 0.875rem;">Data size cap: 64 KB</li>
+            <li style="list-style: disc; color: var(--text-muted); margin-bottom: 6px; font-size: 0.875rem;">NaN/Inf float rejection</li>
+            <li style="list-style: disc; color: var(--text-muted); margin-bottom: 6px; font-size: 0.875rem;">Process isolation (crash containment)</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3 class="fade-in" style="margin-top: 40px;">Graceful Degradation</h3>
+      <div class="table-wrap fade-in" style="margin-top: 16px;">
+        <table>
+          <thead>
+            <tr><th>Failure</th><th>Detection</th><th>Behavior</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Daemon unreachable</td><td>IPC error</td><td>Injector continues without state export</td></tr>
+            <tr><td>Injector disconnects</td><td>IPC timeout</td><td>Daemon serves stale state</td></tr>
+            <tr><td>Overlay crash</td><td>Process exit</td><td>Target game unaffected</td></tr>
+            <tr><td>Target game crash</td><td>Process exit</td><td>All other components survive</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Performance Budgets ─────────────────────────────────────── -->
+  <section>
+    <div class="container">
+      <h2 class="section-title fade-in">Performance Budgets</h2>
+      <p class="section-desc fade-in">Hard limits enforced across the system to keep the target game running at full speed.</p>
+      <div class="table-wrap fade-in">
+        <table>
+          <thead>
+            <tr><th>Component</th><th>Memory Budget</th><th>Latency Target</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>Injector</strong></td><td>&lt; 5 MB</td><td>&mdash;</td></tr>
+            <tr><td><strong>Daemon</strong></td><td>&lt; 30 MB</td><td>&mdash;</td></tr>
+            <tr><td><strong>Overlay</strong></td><td>&lt; 20 MB</td><td>&mdash;</td></tr>
+            <tr><td><strong>Shared Memory</strong></td><td>~10 MB (720p)</td><td>&mdash;</td></tr>
+            <tr><td><strong>State update (IPC)</strong></td><td>&mdash;</td><td>&lt; 1 ms</td></tr>
+            <tr><td><strong>Frame copy (shmem)</strong></td><td>&mdash;</td><td>&lt; 1 ms</td></tr>
+            <tr><td><strong>Overlay render</strong></td><td>&mdash;</td><td>&lt; 5 ms</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Footer ──────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <div class="container">
+      <p>Dual-licensed under <strong>Unlicense</strong> and <strong>MIT</strong></p>
+      <p><a href="https://github.com/AndrewAltimit/game-mods" target="_blank" rel="noopener">github.com/AndrewAltimit/game-mods</a></p>
+      <p class="footer-ai">Code authored by AI agents under human direction</p>
+    </div>
+  </footer>
+
+  <script src="js/main.js"></script>
+</body>
+</html>
