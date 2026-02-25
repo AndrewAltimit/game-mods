@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Documentation — ITK Framework</title>
+  <meta name="description" content="Technical documentation for all ITK core libraries: protocol, shared memory, IPC, sync, video, and networking.">
+  <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <!-- ── Navigation ──────────────────────────────────────────────── -->
+  <nav class="navbar">
+    <div class="container">
+      <a href="index.html" class="nav-logo"><span>ITK</span> Framework</a>
+      <div class="nav-links">
+        <a href="architecture.html">Architecture</a>
+        <a href="nms-cockpit-video.html">NMS Cockpit Video</a>
+        <a href="docs.html" class="active">Docs</a>
+        <a href="https://github.com/AndrewAltimit/game-mods" class="github-link" target="_blank" rel="noopener">
+          <svg viewBox="0 0 16 16" aria-label="GitHub"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        </a>
+      </div>
+      <button class="hamburger" aria-label="Toggle navigation">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <div class="nav-overlay">
+    <a href="index.html">Home</a>
+    <a href="architecture.html">Architecture</a>
+    <a href="nms-cockpit-video.html">NMS Cockpit Video</a>
+    <a href="docs.html">Docs</a>
+    <a href="https://github.com/AndrewAltimit/game-mods" target="_blank" rel="noopener">GitHub</a>
+  </div>
+
+  <!-- ── Breadcrumbs ─────────────────────────────────────────────── -->
+  <div class="breadcrumbs container">
+    <a href="index.html">Home</a> <span>/</span> Documentation
+  </div>
+
+  <!-- ── Docs Layout ─────────────────────────────────────────────── -->
+  <div class="container">
+    <div class="docs-layout">
+
+      <!-- ── Sidebar TOC ───────────────────────────────────────────── -->
+      <aside class="toc">
+        <h4>Core Libraries</h4>
+        <a href="#itk-protocol">itk-protocol</a>
+        <a href="#itk-shmem">itk-shmem</a>
+        <a href="#itk-ipc">itk-ipc</a>
+        <a href="#itk-sync">itk-sync</a>
+        <a href="#itk-video">itk-video</a>
+        <a href="#itk-net">itk-net</a>
+        <h4>Framework</h4>
+        <a href="#templates">Templates</a>
+        <a href="#ci-cd">CI/CD Pipeline</a>
+      </aside>
+
+      <!-- ── Content ─────────────────────────────────────────────── -->
+      <main class="docs-content">
+
+        <!-- itk-protocol -->
+        <section id="itk-protocol" class="docs-section">
+          <div class="section-label">Core Library</div>
+          <h2>itk-protocol</h2>
+          <p>Wire protocol definitions with serialization, validation, and integrity checking. Every IPC message uses a 20-byte binary header followed by a bitcode-serialized payload.</p>
+
+          <h3>Header Format</h3>
+          <div class="header-visual">
+            <div class="header-field">
+              <div class="field-name">Magic</div>
+              <div class="field-size">4B &middot; "ITKP"</div>
+            </div>
+            <div class="header-field">
+              <div class="field-name">Version</div>
+              <div class="field-size">4B &middot; u32 (2)</div>
+            </div>
+            <div class="header-field">
+              <div class="field-name">MsgType</div>
+              <div class="field-size">4B &middot; u32</div>
+            </div>
+            <div class="header-field">
+              <div class="field-name">PayloadLen</div>
+              <div class="field-size">4B &middot; u32</div>
+            </div>
+            <div class="header-field">
+              <div class="field-name">CRC32</div>
+              <div class="field-size">4B &middot; u32</div>
+            </div>
+          </div>
+
+          <h3>Constants</h3>
+          <pre><code>pub const MAGIC: [u8; 4] = *b"ITKP";
+pub const VERSION: u32 = 2;            // bumped for bitcode migration
+pub const HEADER_SIZE: usize = 20;
+pub const MAX_PAYLOAD_SIZE: usize = 1_048_576;  // 1 MB
+pub const MAX_STRING_LENGTH: usize = 256;
+pub const MAX_DATA_LENGTH: usize = 65_536;      // 64 KB</code></pre>
+
+          <h3>MessageType Enum</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Range</th><th>Variants</th><th>Purpose</th></tr></thead>
+              <tbody>
+                <tr><td>0-1</td><td><code>Ping</code>, <code>Pong</code></td><td>Health check / latency</td></tr>
+                <tr><td>10-12</td><td><code>ScreenRect</code>, <code>WindowState</code>, <code>OverlayUpdate</code></td><td>Window geometry</td></tr>
+                <tr><td>20-23</td><td><code>StateSnapshot</code>, <code>StateEvent</code>, <code>StateQuery</code>, <code>StateResponse</code></td><td>Game state exchange</td></tr>
+                <tr><td>30-32</td><td><code>SyncState</code>, <code>ClockPing</code>, <code>ClockPong</code></td><td>Clock and playback sync</td></tr>
+                <tr><td>40-46</td><td><code>VideoLoad</code> through <code>VideoError</code></td><td>Video control and state</td></tr>
+                <tr><td>255</td><td><code>Error</code></td><td>Error response</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>Validation</h3>
+          <p>All payload structs implement the <code>Validate</code> trait. Validation rules:</p>
+          <ul>
+            <li>Float fields reject <code>NaN</code> and <code>Infinity</code></li>
+            <li>String fields capped at 256 bytes</li>
+            <li>Data fields capped at 64 KB</li>
+            <li>DPI scale must be in range 0.1&ndash;10.0</li>
+            <li>Playback rate must be positive</li>
+          </ul>
+
+          <h3>Encode / Decode</h3>
+          <pre><code>// Encode a message
+let bytes = itk_protocol::encode(MessageType::Ping, &amp;())?;
+
+// Decode with validation
+let (msg_type, payload): (MessageType, ScreenRect) =
+    itk_protocol::decode_validated(&amp;bytes)?;
+
+// Decode header only (for routing)
+let header = itk_protocol::decode_header(&amp;bytes)?;</code></pre>
+
+          <h3>Error Types</h3>
+          <pre><code>pub enum ProtocolError {
+    InvalidMagic,
+    UnsupportedVersion,
+    PayloadTooLarge,
+    CrcMismatch,
+    UnknownMessageType,
+    Serialization(String),
+    IncompleteHeader,
+    IncompletePayload,
+    ValidationFailed(String),
+}</code></pre>
+        </section>
+
+        <!-- itk-shmem -->
+        <section id="itk-shmem" class="docs-section">
+          <div class="section-label">Core Library</div>
+          <h2>itk-shmem</h2>
+          <p>Cross-platform shared memory with seqlock synchronization for lock-free single-writer, multi-reader frame transport.</p>
+
+          <h3>SeqlockHeader</h3>
+          <pre><code>#[repr(C)]  // 64 bytes, cache-line aligned
+pub struct SeqlockHeader {
+    pub seq: AtomicU32,           // odd = writing, even = consistent
+    pub read_idx: AtomicU32,      // current read buffer (0-2)
+    pub pts_ms: AtomicU64,        // presentation timestamp
+    pub frame_width: AtomicU32,
+    pub frame_height: AtomicU32,
+    pub is_playing: AtomicU32,
+    pub content_id_hash: AtomicU64,
+    pub duration_ms: AtomicU64,
+    pub writer_count: AtomicU32,  // multi-writer detection
+    _padding: [u8; 8],
+}</code></pre>
+
+          <h3>FrameBuffer API</h3>
+          <p>Triple-buffered RGBA frame transport. Layout: <code>[Header: 64B][Buf0: W*H*4][Buf1: W*H*4][Buf2: W*H*4]</code></p>
+          <pre><code>// Writer (daemon)
+let fb = FrameBuffer::create("nms_video", 1280, 720)?;
+fb.write_frame(&amp;rgba_data, pts_ms, content_hash)?;
+
+// Reader (injector or overlay)
+let fb = FrameBuffer::open("nms_video", 1280, 720)?;
+let mut buf = vec![0u8; 1280 * 720 * 4];
+let (pts, changed) = fb.read_frame(last_pts, &amp;mut buf)?;</code></pre>
+
+          <h3>SharedMemory API</h3>
+          <pre><code>// Create (owner)
+let shmem = SharedMemory::create("itk_frames", size)?;
+
+// Open (reader)
+let shmem = SharedMemory::open("itk_frames", size)?;
+
+// Raw access (unsafe)
+unsafe { shmem.write(offset, &amp;data)?; }
+unsafe { shmem.read(offset, &amp;mut buf)?; }</code></pre>
+
+          <h3>Seqlock Algorithm</h3>
+          <p>Writer operations use <code>Acquire</code>/<code>Release</code> memory ordering. ARM-compatible with explicit <code>fence(Acquire)</code> on the reader side. The <code>begin_write()</code> method checks <code>writer_count</code> to detect multiple-writer violations at runtime.</p>
+
+          <h3>Read Strategies</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Method</th><th>Behavior</th><th>Use Case</th></tr></thead>
+              <tbody>
+                <tr><td><code>try_read()</code></td><td>Returns <code>Option&lt;SeqlockState&gt;</code></td><td>Non-blocking poll</td></tr>
+                <tr><td><code>read_blocking()</code></td><td>Spins until consistent read</td><td>Guaranteed latest state</td></tr>
+                <tr><td><code>read_with_timeout(n)</code></td><td>Retries up to N times</td><td>Bounded wait</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>Size Reference</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Resolution</th><th>Total Size</th></tr></thead>
+              <tbody>
+                <tr><td>720p (1280&times;720)</td><td>64 + 11,059,200 bytes (~11 MB)</td></tr>
+                <tr><td>1080p (1920&times;1080)</td><td>64 + 24,883,200 bytes (~24 MB)</td></tr>
+                <tr><td>4K (3840&times;2160)</td><td>64 + 99,532,800 bytes (~95 MB)</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p style="margin-top: 16px;">Maximum dimension: 8192&times;8192. Checked arithmetic prevents integer overflow in size calculations.</p>
+        </section>
+
+        <!-- itk-ipc -->
+        <section id="itk-ipc" class="docs-section">
+          <div class="section-label">Core Library</div>
+          <h2>itk-ipc</h2>
+          <p>Cross-platform IPC via trait abstractions. Named pipes on Windows, Unix domain sockets on Linux.</p>
+
+          <h3>IpcChannel Trait</h3>
+          <pre><code>pub trait IpcChannel: Send + Sync {
+    fn send(&amp;self, data: &amp;[u8]) -&gt; Result&lt;()&gt;;
+    fn recv(&amp;self) -&gt; Result&lt;Vec&lt;u8&gt;&gt;;        // blocking
+    fn try_recv(&amp;self) -&gt; Result&lt;Option&lt;Vec&lt;u8&gt;&gt;&gt;; // non-blocking
+    fn is_connected(&amp;self) -&gt; bool;
+    fn close(&amp;self);
+}</code></pre>
+
+          <h3>IpcServer Trait</h3>
+          <pre><code>pub trait IpcServer: Send + Sync {
+    type Channel: IpcChannel;
+    fn accept(&amp;self) -&gt; Result&lt;Self::Channel&gt;; // blocking
+    fn close(&amp;self);
+}</code></pre>
+
+          <h3>Factory Functions</h3>
+          <pre><code>// Connect as client
+let channel = itk_ipc::connect("video_control")?;
+
+// Listen as server
+let server = itk_ipc::listen("video_control")?;
+let client = server.accept()?;
+
+// Channel naming
+itk_ipc::make_channel_name("video_control")
+// Windows: "\\.\pipe\itk_video_control"
+// Linux:   "/tmp/itk_video_control.sock"</code></pre>
+
+          <h3>Message Helpers</h3>
+          <pre><code>// Read a length-prefixed message
+let data = itk_ipc::read_message(&amp;mut reader)?;
+
+// Write a length-prefixed message
+itk_ipc::write_message(&amp;mut writer, &amp;data)?;</code></pre>
+
+          <h3>Platform Implementations</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Platform</th><th>Client</th><th>Server</th></tr></thead>
+              <tbody>
+                <tr><td>Windows</td><td><code>NamedPipeClient</code></td><td><code>NamedPipeServer</code></td></tr>
+                <tr><td>Unix</td><td><code>UnixSocketClient</code></td><td><code>UnixSocketServer</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- itk-sync -->
+        <section id="itk-sync" class="docs-section">
+          <div class="section-label">Core Library</div>
+          <h2>itk-sync</h2>
+          <p>Clock synchronization and playback drift correction for multiplayer video sync.</p>
+
+          <h3>Sync Model</h3>
+          <p>Position is calculated from a reference point rather than absolute timestamps:</p>
+          <pre><code>current_pos = position_at_ref + (now - ref_wallclock) * playback_rate</code></pre>
+
+          <h3>ClockSync</h3>
+          <p>NTP-lite algorithm that processes ping/pong exchanges to estimate clock offset between peers.</p>
+          <pre><code>let mut clock = ClockSync::new();
+
+// After receiving a pong:
+clock.process_pong(send_time_ms, remote_time_ms, recv_time_ms);
+
+// Convert timestamps between clocks:
+let remote_ts = clock.local_to_remote(local_ms)?;
+let local_ts = clock.remote_to_local(remote_ms)?;</code></pre>
+          <p>Uses the median of the best-half (lowest RTT) of up to 10 samples for robustness against network jitter.</p>
+
+          <h3>PlaybackSync</h3>
+          <pre><code>pub struct PlaybackSync {
+    pub content_id: String,
+    pub position_at_ref_ms: u64,
+    pub ref_wallclock_ms: u64,
+    pub is_playing: bool,
+    pub playback_rate: f64,  // 0.95-1.05 for drift correction
+}
+
+let sync = PlaybackSync::new("video_123");
+let pos = sync.current_position_ms();  // computed from ref point
+sync.set_playing(true);                // captures position first
+sync.seek(30_000);                     // seek to 30s</code></pre>
+
+          <h3>DriftCorrector</h3>
+          <p>Combines a target <code>PlaybackSync</code> with a <code>ClockSync</code> to smoothly correct playback drift across peers.</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Drift Range</th><th>Correction Rate</th><th>Action</th></tr></thead>
+              <tbody>
+                <tr><td>0 &ndash; 150 ms</td><td>1.0x</td><td>No correction (within tolerance)</td></tr>
+                <tr><td>151 &ndash; 500 ms</td><td>0.98x / 1.02x</td><td>Gentle speed adjustment</td></tr>
+                <tr><td>501 &ndash; 1500 ms</td><td>0.95x / 1.05x</td><td>Moderate speed adjustment</td></tr>
+                <tr><td>&gt; 1500 ms</td><td>0.0x (pause)</td><td>Recommend hard seek</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <pre><code>let mut corrector = DriftCorrector::new(target_sync, clock_sync);
+
+// Get corrected playback rate
+let rate = corrector.calculate_rate(current_position_ms);
+
+// Check if hard seek is needed
+if let Some(target) = corrector.should_seek(current_position_ms) {
+    player.seek(target);
+}
+
+// Get current drift
+let drift = corrector.current_drift_ms(current_position_ms);</code></pre>
+        </section>
+
+        <!-- itk-video -->
+        <section id="itk-video" class="docs-section">
+          <div class="section-label">Core Library</div>
+          <h2>itk-video</h2>
+          <p>Video decoding pipeline powered by ffmpeg-next with hardware acceleration and shared memory frame output.</p>
+
+          <h3>Pipeline</h3>
+          <pre><code>StreamSource (file/URL)
+  &rarr; VideoDecoder (ffmpeg-next)
+  &rarr; FrameScaler (to 1280&times;720 RGBA)
+  &rarr; FrameWriter (to shared memory)</code></pre>
+
+          <h3>Constants</h3>
+          <pre><code>pub const DEFAULT_WIDTH: u32 = 1280;
+pub const DEFAULT_HEIGHT: u32 = 720;
+pub const BYTES_PER_PIXEL: usize = 4;  // RGBA
+
+pub const fn frame_size(width: u32, height: u32) -&gt; usize {
+    width as usize * height as usize * BYTES_PER_PIXEL
+}</code></pre>
+
+          <h3>StreamSource</h3>
+          <p>Supports local files and network URLs. YouTube support is gated behind the <code>youtube</code> feature flag and requires <code>yt-dlp</code> to be installed.</p>
+
+          <h3>Hardware Acceleration</h3>
+          <p>The decoder tries D3D11VA hardware acceleration first, with automatic fallback to software decoding. The <code>hwaccel</code> module handles device negotiation and format conversion.</p>
+
+          <h3>Modules</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Module</th><th>Purpose</th></tr></thead>
+              <tbody>
+                <tr><td><code>decoder</code></td><td>VideoDecoder wrapping ffmpeg-next</td></tr>
+                <tr><td><code>scaler</code></td><td>FrameScaler for pixel format/resolution conversion</td></tr>
+                <tr><td><code>frame_writer</code></td><td>FrameWriter to shared memory via itk-shmem</td></tr>
+                <tr><td><code>hwaccel</code></td><td>Hardware acceleration negotiation</td></tr>
+                <tr><td><code>stream</code></td><td>StreamSource URL/file resolution</td></tr>
+                <tr><td><code>youtube</code></td><td>yt-dlp integration (feature-gated)</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- itk-net -->
+        <section id="itk-net" class="docs-section">
+          <div class="section-label">Core Library</div>
+          <h2>itk-net</h2>
+          <p>P2P networking for multiplayer session management and playback synchronization via laminar.</p>
+
+          <h3>Architecture</h3>
+          <pre><code>Session
+  +-- Discovery (UDP broadcast on port 7332)
+  +-- PeerManager (laminar connections on port 7331)
+  +-- SyncManager (ClockSync + PlaybackSync per peer)</code></pre>
+
+          <h3>Constants</h3>
+          <pre><code>pub const DEFAULT_PORT: u16 = 7331;
+pub const DISCOVERY_PORT: u16 = 7332;
+pub const SYNC_INTERVAL_MS: u64 = 500;
+pub const CLOCK_PING_INTERVAL_MS: u64 = 2000;</code></pre>
+
+          <h3>Sync Flow</h3>
+          <ol style="padding-left: 20px;">
+            <li style="list-style: decimal; margin-bottom: 8px;">Leader broadcasts <code>SyncState</code> every 500ms (unreliable delivery)</li>
+            <li style="list-style: decimal; margin-bottom: 8px;">Followers use <code>DriftCorrector</code> for smooth catch-up</li>
+            <li style="list-style: decimal; margin-bottom: 8px;"><code>ClockPing</code>/<code>ClockPong</code> exchanges estimate clock offset every 2s</li>
+            <li style="list-style: decimal; margin-bottom: 8px;">Commands (play, pause, seek) sent via reliable delivery</li>
+          </ol>
+
+          <h3>Session Roles</h3>
+          <p>One peer is elected leader (the host). The leader is the authoritative source for playback state. Discovery uses UDP broadcast to find peers on the local network.</p>
+
+          <h3>Public API</h3>
+          <pre><code>pub use session::{Session, SessionConfig, SessionEvent, SessionRole};
+pub use discovery::Discovery;
+pub use peer::{Peer, PeerEvent, PeerManager};
+pub use sync_manager::SyncManager;</code></pre>
+        </section>
+
+        <!-- Framework Templates -->
+        <section id="templates" class="docs-section">
+          <div class="section-label">Framework</div>
+          <h2>Templates</h2>
+          <p>Starter templates for building new game mod projects on the ITK framework.</p>
+
+          <div class="card-grid" style="margin-top: 24px;">
+            <div class="card">
+              <h3>itk-daemon</h3>
+              <p>Central coordinator daemon template. Handles IPC server setup, shared memory creation, and event loop scaffolding.</p>
+              <p class="mono mt-2">daemon/</p>
+            </div>
+            <div class="card">
+              <h3>itk-overlay</h3>
+              <p>wgpu-based transparent overlay window template. Includes egui integration, click-through setup, and shared memory reading.</p>
+              <p class="mono mt-2">overlay/</p>
+            </div>
+            <div class="card">
+              <h3>itk-native-dll</h3>
+              <p>Windows DLL injection template using retour for function hooking. Includes DllMain entry point and hook setup scaffolding.</p>
+              <p class="mono mt-2">injectors/windows/native-dll/</p>
+            </div>
+            <div class="card">
+              <h3>itk-ld-preload</h3>
+              <p>Linux LD_PRELOAD injection template. Intercepts library calls at the dynamic linker level for non-invasive hooking.</p>
+              <p class="mono mt-2">injectors/linux/ld-preload/</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- CI/CD -->
+        <section id="ci-cd" class="docs-section">
+          <div class="section-label">Infrastructure</div>
+          <h2>CI/CD Pipeline</h2>
+          <p>All CI runs inside Docker containers via <code>docker compose --profile ci</code> on a self-hosted runner.</p>
+
+          <h3>Pipeline Stages</h3>
+          <div class="table-wrap" style="margin-top: 16px;">
+            <table>
+              <thead><tr><th>Stage</th><th>Command</th><th>Purpose</th></tr></thead>
+              <tbody>
+                <tr><td>1. Format</td><td><code>cargo fmt --all -- --check</code></td><td>Consistent code style</td></tr>
+                <tr><td>2. Lint</td><td><code>cargo clippy --all-targets -- -D warnings</code></td><td>Static analysis (warnings = errors)</td></tr>
+                <tr><td>3. Test</td><td><code>cargo test -- --test-threads=4</code></td><td>Unit and integration tests</td></tr>
+                <tr><td>4. Build</td><td><code>cargo build --release</code></td><td>Release binary compilation</td></tr>
+                <tr><td>5. Audit</td><td><code>cargo deny check</code></td><td>License and advisory checking</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>Workflows</h3>
+          <ul>
+            <li><strong>main-ci.yml</strong> &mdash; Runs on push to main and version tags. Includes binary building and GitHub Release creation with auto-generated changelog.</li>
+            <li><strong>pr-validation.yml</strong> &mdash; Runs on pull requests. Adds AI code review (Gemini primary, Codex secondary) with automated fix iterations (up to 5 rounds).</li>
+          </ul>
+
+          <h3>Release Artifacts</h3>
+          <p>On tagged releases, the pipeline builds Linux x64 binaries:</p>
+          <ul>
+            <li><code>nms-video-daemon-linux-x64</code></li>
+            <li><code>nms-video-overlay-linux-x64</code></li>
+            <li><code>mem-scanner-linux-x64</code></li>
+          </ul>
+
+          <h3>Advisory Exemptions</h3>
+          <p>Two advisories are currently exempted in <code>deny.toml</code>:</p>
+          <ul>
+            <li><code>RUSTSEC-2025-0141</code> &mdash; bincode unmaintained (migration to bitcode in progress)</li>
+            <li><code>RUSTSEC-2026-0007</code> &mdash; bytes integer overflow (update pending)</li>
+          </ul>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- ── Footer ──────────────────────────────────────────────────── -->
+  <footer class="footer" style="margin-top: 80px;">
+    <div class="container">
+      <p>Dual-licensed under <strong>Unlicense</strong> and <strong>MIT</strong></p>
+      <p><a href="https://github.com/AndrewAltimit/game-mods" target="_blank" rel="noopener">github.com/AndrewAltimit/game-mods</a></p>
+      <p class="footer-ai">Code authored by AI agents under human direction</p>
+    </div>
+  </footer>
+
+  <script src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NMS Cockpit Video — ITK Framework</title>
+  <meta name="description" content="Watch videos inside your No Man's Sky cockpit. Vulkan injection, VR support, YouTube playback, and multiplayer sync.">
+  <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <!-- ── Navigation ──────────────────────────────────────────────── -->
+  <nav class="navbar">
+    <div class="container">
+      <a href="index.html" class="nav-logo"><span>ITK</span> Framework</a>
+      <div class="nav-links">
+        <a href="architecture.html">Architecture</a>
+        <a href="nms-cockpit-video.html" class="active">NMS Cockpit Video</a>
+        <a href="docs.html">Docs</a>
+        <a href="https://github.com/AndrewAltimit/game-mods" class="github-link" target="_blank" rel="noopener">
+          <svg viewBox="0 0 16 16" aria-label="GitHub"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        </a>
+      </div>
+      <button class="hamburger" aria-label="Toggle navigation">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <div class="nav-overlay">
+    <a href="index.html">Home</a>
+    <a href="architecture.html">Architecture</a>
+    <a href="nms-cockpit-video.html">NMS Cockpit Video</a>
+    <a href="docs.html">Docs</a>
+    <a href="https://github.com/AndrewAltimit/game-mods" target="_blank" rel="noopener">GitHub</a>
+  </div>
+
+  <!-- ── Breadcrumbs ─────────────────────────────────────────────── -->
+  <div class="breadcrumbs container">
+    <a href="index.html">Home</a> <span>/</span> NMS Cockpit Video
+  </div>
+
+  <!-- ── Page Header ─────────────────────────────────────────────── -->
+  <section class="page-header">
+    <div class="container">
+      <div class="section-label fade-in">Featured Project</div>
+      <h1 class="fade-in">NMS Cockpit Video</h1>
+      <p class="fade-in">Watch videos inside your No Man's Sky spaceship cockpit. Desktop and VR, local files and YouTube, singleplayer and multiplayer.</p>
+    </div>
+  </section>
+
+  <!-- ── Feature Highlights ──────────────────────────────────────── -->
+  <section>
+    <div class="container">
+      <div class="card-grid">
+        <div class="card fade-in">
+          <div class="card-icon">V</div>
+          <h3>Vulkan Injection</h3>
+          <p>Hooks directly into the game's Vulkan render pipeline. Renders a textured quad in 3D space, positioned relative to the cockpit camera. Works in fullscreen and borderless modes.</p>
+        </div>
+        <div class="card fade-in">
+          <div class="card-icon">R</div>
+          <h3>VR Support</h3>
+          <p>Intercepts OpenVR's <code>IVRCompositor::Submit</code> to render per-eye stereo views. The video screen appears as a physical object in VR space with proper depth and perspective.</p>
+        </div>
+        <div class="card fade-in">
+          <div class="card-icon">Y</div>
+          <h3>YouTube Playback</h3>
+          <p>Load any YouTube URL directly. The daemon uses yt-dlp to extract stream URLs and decodes with ffmpeg. Hardware-accelerated via D3D11VA with automatic software fallback.</p>
+        </div>
+        <div class="card fade-in">
+          <div class="card-icon">M</div>
+          <h3>Multiplayer Sync</h3>
+          <p>P2P synchronization via laminar. One player hosts, others auto-sync playback position with drift correction. Clock offset estimated via NTP-lite ping/pong exchanges.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Rendering Paths (Tabs) ──────────────────────────────────── -->
+  <section style="background: var(--bg-raised);">
+    <div class="container">
+      <h2 class="section-title fade-in">Rendering Architecture</h2>
+      <p class="section-desc fade-in">Two rendering paths, each optimized for different use cases.</p>
+
+      <div class="fade-in">
+        <div class="tabs">
+          <button class="tab-btn active" data-tab="injector">Vulkan Injector (Desktop + VR)</button>
+          <button class="tab-btn" data-tab="overlay">Overlay (Desktop Only)</button>
+        </div>
+
+        <div class="tab-panel active" data-tab="injector">
+          <div class="diagram-wrap">
+            <svg viewBox="0 0 700 280" xmlns="http://www.w3.org/2000/svg" style="max-width: 700px;">
+              <defs>
+                <linearGradient id="ig" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stop-color="#7c5bf0"/><stop offset="100%" stop-color="#5b8cf0"/>
+                </linearGradient>
+              </defs>
+              <!-- DLL Injected into NMS -->
+              <rect x="20" y="20" width="660" height="240" rx="8" fill="none" stroke="#27272a" stroke-width="1" stroke-dasharray="6 3"/>
+              <text x="40" y="45" fill="#71717a" font-family="JetBrains Mono, monospace" font-size="10">NMS.exe process</text>
+
+              <!-- Hook chain -->
+              <rect x="50" y="70" width="130" height="40" rx="6" fill="#16161a" stroke="#27272a" stroke-width="1"/>
+              <text x="115" y="95" text-anchor="middle" fill="#e4e4e7" font-family="Inter, sans-serif" font-size="11">vkCreateDevice</text>
+
+              <line x1="180" y1="90" x2="210" y2="90" stroke="#5b8cf0" stroke-width="1.5" class="flow-line"/>
+
+              <rect x="210" y="70" width="140" height="40" rx="6" fill="#16161a" stroke="#27272a" stroke-width="1"/>
+              <text x="280" y="95" text-anchor="middle" fill="#e4e4e7" font-family="Inter, sans-serif" font-size="11">vkQueuePresentKHR</text>
+
+              <line x1="350" y1="90" x2="380" y2="90" stroke="#5b8cf0" stroke-width="1.5" class="flow-line"/>
+
+              <rect x="380" y="70" width="130" height="40" rx="6" fill="none" stroke="url(#ig)" stroke-width="1.5"/>
+              <text x="445" y="95" text-anchor="middle" fill="#7c5bf0" font-family="Inter, sans-serif" font-size="11" font-weight="600">Render Quad</text>
+
+              <line x1="510" y1="90" x2="540" y2="90" stroke="#5b8cf0" stroke-width="1.5" class="flow-line"/>
+
+              <rect x="540" y="70" width="120" height="40" rx="6" fill="#16161a" stroke="#27272a" stroke-width="1"/>
+              <text x="600" y="95" text-anchor="middle" fill="#e4e4e7" font-family="Inter, sans-serif" font-size="11">Present Frame</text>
+
+              <!-- Shmem read -->
+              <rect x="300" y="150" width="200" height="36" rx="6" fill="#16161a" stroke="#7c5bf0" stroke-width="1" stroke-dasharray="4 2"/>
+              <text x="400" y="173" text-anchor="middle" fill="#7c5bf0" font-family="JetBrains Mono, monospace" font-size="10">Shared Memory (read)</text>
+
+              <line x1="400" y1="110" x2="400" y2="150" stroke="#7c5bf0" stroke-width="1" stroke-dasharray="4 2"/>
+
+              <!-- Camera read -->
+              <rect x="50" y="150" width="200" height="36" rx="6" fill="#16161a" stroke="#27272a" stroke-width="1"/>
+              <text x="150" y="173" text-anchor="middle" fill="#a1a1aa" font-family="JetBrains Mono, monospace" font-size="10">Camera Matrix (memory)</text>
+
+              <line x1="150" y1="110" x2="150" y2="150" stroke="#3f3f46" stroke-width="1" stroke-dasharray="4 2"/>
+
+              <!-- VR path -->
+              <rect x="50" y="210" width="180" height="36" rx="6" fill="#16161a" stroke="#27272a" stroke-width="1"/>
+              <text x="140" y="233" text-anchor="middle" fill="#a1a1aa" font-family="Inter, sans-serif" font-size="10">IVRCompositor::Submit</text>
+
+              <line x1="230" y1="228" x2="300" y2="228" stroke="#5b8cf0" stroke-width="1" class="flow-line"/>
+
+              <rect x="300" y="210" width="160" height="36" rx="6" fill="none" stroke="url(#ig)" stroke-width="1.5"/>
+              <text x="380" y="233" text-anchor="middle" fill="#7c5bf0" font-family="Inter, sans-serif" font-size="11" font-weight="600">Render per Eye</text>
+
+              <text x="530" y="233" fill="#71717a" font-family="Inter, sans-serif" font-size="10">Stereo 3D in VR</text>
+            </svg>
+          </div>
+          <p style="color: var(--text-muted); font-size: 0.875rem;">The injector hooks Vulkan present calls and renders a textured quad before the frame is shown. For VR, it intercepts the OpenVR compositor submit and renders per-eye with correct stereo projection.</p>
+        </div>
+
+        <div class="tab-panel" data-tab="overlay">
+          <div class="diagram-wrap">
+            <svg viewBox="0 0 700 180" xmlns="http://www.w3.org/2000/svg" style="max-width: 700px;">
+              <rect x="50" y="30" width="160" height="50" rx="8" fill="#16161a" stroke="#27272a" stroke-width="1.5"/>
+              <text x="130" y="60" text-anchor="middle" fill="#e4e4e7" font-family="Inter, sans-serif" font-size="13" font-weight="500">Daemon</text>
+
+              <line x1="210" y1="55" x2="280" y2="55" stroke="#7c5bf0" stroke-width="1.5" class="flow-line"/>
+              <text x="245" y="48" text-anchor="middle" fill="#7c5bf0" font-family="JetBrains Mono, monospace" font-size="9">shmem</text>
+
+              <rect x="280" y="30" width="180" height="50" rx="8" fill="#16161a" stroke="#7c5bf0" stroke-width="1.5"/>
+              <text x="370" y="60" text-anchor="middle" fill="#e4e4e7" font-family="Inter, sans-serif" font-size="13" font-weight="500">Overlay Window</text>
+
+              <line x1="460" y1="55" x2="520" y2="55" stroke="#5b8cf0" stroke-width="1.5" class="flow-line"/>
+              <text x="490" y="48" text-anchor="middle" fill="#5b8cf0" font-family="JetBrains Mono, monospace" font-size="9">renders</text>
+
+              <rect x="520" y="30" width="150" height="50" rx="8" fill="none" stroke="#27272a" stroke-width="1" stroke-dasharray="4 2"/>
+              <text x="595" y="60" text-anchor="middle" fill="#71717a" font-family="Inter, sans-serif" font-size="12">On Top of NMS</text>
+
+              <text x="370" y="120" text-anchor="middle" fill="#a1a1aa" font-family="Inter, sans-serif" font-size="12">Separate process &middot; egui + wgpu &middot; Desktop only</text>
+              <text x="370" y="140" text-anchor="middle" fill="#71717a" font-family="Inter, sans-serif" font-size="11">Requires borderless/windowed mode</text>
+            </svg>
+          </div>
+          <p style="color: var(--text-muted); font-size: 0.875rem;">The overlay runs as a separate transparent window on top of the game. Simpler to set up but limited to desktop borderless/windowed mode. Uses egui for interactive controls.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Components (Accordion) ──────────────────────────────────── -->
+  <section>
+    <div class="container">
+      <h2 class="section-title fade-in">Components</h2>
+      <p class="section-desc fade-in">Four components work together, each running as a separate process.</p>
+
+      <div class="fade-in">
+        <div class="accordion-item">
+          <div class="accordion-header">Launcher</div>
+          <div class="accordion-body">
+            <div class="accordion-body-inner">
+              <p>The launcher orchestrates the entire workflow:</p>
+              <ul style="padding-left: 20px; margin-top: 12px;">
+                <li style="list-style: disc; margin-bottom: 6px;">Starts the daemon process</li>
+                <li style="list-style: disc; margin-bottom: 6px;">Launches NMS with <code>--disable-eac</code> (required for injection)</li>
+                <li style="list-style: disc; margin-bottom: 6px;">Waits for the game process to appear</li>
+                <li style="list-style: disc; margin-bottom: 6px;">Injects the DLL into the game</li>
+                <li style="list-style: disc; margin-bottom: 6px;">Monitors all processes and shuts down the daemon on exit</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="accordion-item">
+          <div class="accordion-header">Daemon</div>
+          <div class="accordion-body">
+            <div class="accordion-body-inner">
+              <p>The daemon handles all heavy processing outside the game:</p>
+              <ul style="padding-left: 20px; margin-top: 12px;">
+                <li style="list-style: disc; margin-bottom: 6px;"><strong>Video decoding</strong> &mdash; ffmpeg-next with D3D11VA hardware acceleration, software fallback</li>
+                <li style="list-style: disc; margin-bottom: 6px;"><strong>Frame transport</strong> &mdash; Writes decoded RGBA frames to triple-buffered shared memory via seqlock</li>
+                <li style="list-style: disc; margin-bottom: 6px;"><strong>Audio playback</strong> &mdash; cpal with ringbuf for buffered output</li>
+                <li style="list-style: disc; margin-bottom: 6px;"><strong>YouTube support</strong> &mdash; yt-dlp integration for URL extraction</li>
+                <li style="list-style: disc; margin-bottom: 6px;"><strong>IPC server</strong> &mdash; Accepts commands from injector and overlay</li>
+                <li style="list-style: disc; margin-bottom: 6px;"><strong>Multiplayer sync</strong> &mdash; P2P networking via laminar (optional)</li>
+              </ul>
+              <p style="margin-top: 12px;">Memory budget: &lt; 30 MB (excluding video buffer)</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="accordion-item">
+          <div class="accordion-header">Injector (DLL)</div>
+          <div class="accordion-body">
+            <div class="accordion-body-inner">
+              <p>The injector is a Vulkan rendering hook DLL loaded into the NMS process:</p>
+              <ul style="padding-left: 20px; margin-top: 12px;">
+                <li style="list-style: disc; margin-bottom: 6px;"><strong>Vulkan hooks</strong> &mdash; Intercepts <code>vkCreateDevice</code>, <code>vkCreateSwapchainKHR</code>, <code>vkQueuePresentKHR</code></li>
+                <li style="list-style: disc; margin-bottom: 6px;"><strong>VR hooks</strong> &mdash; Swaps the <code>IVRCompositor::Submit</code> vtable entry for stereo rendering</li>
+                <li style="list-style: disc; margin-bottom: 6px;"><strong>Renderer</strong> &mdash; Full Vulkan pipeline: descriptor sets, render pass, textured quad geometry</li>
+                <li style="list-style: disc; margin-bottom: 6px;"><strong>Camera reading</strong> &mdash; Reads view matrix from <code>cGcCameraManager</code> at known memory offsets</li>
+                <li style="list-style: disc; margin-bottom: 6px;"><strong>Keyboard input</strong> &mdash; F5-F9 hotkeys for toggling, play/pause, seeking, URL loading</li>
+                <li style="list-style: disc; margin-bottom: 6px;"><strong>Shaders</strong> &mdash; WGSL compiled to SPIR-V at build time via naga (no Vulkan SDK required)</li>
+              </ul>
+              <p style="margin-top: 12px;">Memory budget: &lt; 5 MB. Requires nightly Rust.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="accordion-item">
+          <div class="accordion-header">Overlay (Legacy)</div>
+          <div class="accordion-body">
+            <div class="accordion-body-inner">
+              <p>A simpler alternative for desktop-only use:</p>
+              <ul style="padding-left: 20px; margin-top: 12px;">
+                <li style="list-style: disc; margin-bottom: 6px;">Separate transparent window rendered on top of NMS</li>
+                <li style="list-style: disc; margin-bottom: 6px;">egui for interactive controls (play/pause, seek bar, URL input)</li>
+                <li style="list-style: disc; margin-bottom: 6px;">wgpu for GPU-accelerated rendering</li>
+                <li style="list-style: disc; margin-bottom: 6px;">Reads frames from shared memory (same as injector)</li>
+                <li style="list-style: disc; margin-bottom: 6px;">Click-through mode (<code>WS_EX_TRANSPARENT</code>) with F9 toggle for interaction</li>
+              </ul>
+              <p style="margin-top: 12px;">Requires borderless or windowed mode. Does not work in VR.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Rendering Pipeline ──────────────────────────────────────── -->
+  <section style="background: var(--bg-raised);">
+    <div class="container">
+      <h2 class="section-title fade-in">Rendering Pipeline</h2>
+
+      <div class="card-grid">
+        <div class="card fade-in">
+          <h3>Desktop Path</h3>
+          <p class="mono" style="margin-bottom: 12px;">vkQueuePresentKHR hook</p>
+          <ol style="padding-left: 20px; color: var(--text-muted); font-size: 0.85rem; line-height: 2;">
+            <li style="list-style: decimal;">Read camera view matrix from memory</li>
+            <li style="list-style: decimal;">Poll shared memory for new frame</li>
+            <li style="list-style: decimal;">Compute Model-View-Projection matrix</li>
+            <li style="list-style: decimal;">Transition swapchain image layout</li>
+            <li style="list-style: decimal;">Begin render pass (LOAD existing content)</li>
+            <li style="list-style: decimal;">Draw textured quad with WGSL shaders</li>
+            <li style="list-style: decimal;">Transition swapchain image back</li>
+            <li style="list-style: decimal;">Submit command buffer to queue</li>
+          </ol>
+        </div>
+        <div class="card fade-in">
+          <h3>VR Path</h3>
+          <p class="mono" style="margin-bottom: 12px;">IVRCompositor::Submit hook</p>
+          <ol style="padding-left: 20px; color: var(--text-muted); font-size: 0.85rem; line-height: 2;">
+            <li style="list-style: decimal;">Intercept VRVulkanTextureData_t per eye</li>
+            <li style="list-style: decimal;">Extract VkImage from texture data</li>
+            <li style="list-style: decimal;">Create temporary framebuffer for eye</li>
+            <li style="list-style: decimal;">Begin render pass (LOAD existing content)</li>
+            <li style="list-style: decimal;">Draw textured quad with stereo projection</li>
+            <li style="list-style: decimal;">End render pass and clean up</li>
+            <li style="list-style: decimal;">Pass modified frame to compositor</li>
+          </ol>
+        </div>
+      </div>
+
+      <h3 class="fade-in" style="margin-top: 40px;">WGSL Shader (Fragment)</h3>
+      <pre class="fade-in"><code>@group(0) @binding(0) var tex: texture_2d&lt;f32&gt;;
+@group(0) @binding(1) var samp: sampler;
+
+@fragment
+fn fs_main(@location(0) uv: vec2&lt;f32&gt;) -&gt; @location(0) vec4&lt;f32&gt; {
+    return textureSample(tex, samp, uv);
+}</code></pre>
+    </div>
+  </section>
+
+  <!-- ── Vulkan Hook Points ──────────────────────────────────────── -->
+  <section>
+    <div class="container">
+      <h2 class="section-title fade-in">Vulkan Hook Points</h2>
+      <div class="table-wrap fade-in">
+        <table>
+          <thead>
+            <tr><th>Hook</th><th>Method</th><th>Purpose</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>vkCreateInstance</code></td>
+              <td>retour static_detour</td>
+              <td>Capture VkInstance for ash loader initialization</td>
+            </tr>
+            <tr>
+              <td><code>vkCreateDevice</code></td>
+              <td>retour static_detour</td>
+              <td>Capture VkDevice, VkPhysicalDevice, and queue family index</td>
+            </tr>
+            <tr>
+              <td><code>vkCreateSwapchainKHR</code></td>
+              <td>retour + ICD RawDetour</td>
+              <td>Track swapchain format, extent, and image handles</td>
+            </tr>
+            <tr>
+              <td><code>vkQueuePresentKHR</code></td>
+              <td>retour + ICD RawDetour</td>
+              <td>Render textured quad before desktop frame present</td>
+            </tr>
+            <tr>
+              <td><code>IVRCompositor::Submit</code></td>
+              <td>vtable swap</td>
+              <td>Render quad per VR eye before compositor submission</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Usage Guide ─────────────────────────────────────────────── -->
+  <section style="background: var(--bg-raised);">
+    <div class="container">
+      <h2 class="section-title fade-in">Usage</h2>
+
+      <h3 class="fade-in">Quick Start</h3>
+      <pre class="fade-in"><code># Launch everything (daemon + NMS + injection)
+nms-video-launcher.exe
+
+# Or start components individually:
+nms-video-daemon.exe --source "https://youtube.com/watch?v=..."
+nms-video-daemon.exe --source "/path/to/video.mp4"</code></pre>
+
+      <h3 class="fade-in" style="margin-top: 32px;">Injector Keyboard Shortcuts</h3>
+      <div class="table-wrap fade-in">
+        <table>
+          <thead><tr><th>Key</th><th>Action</th></tr></thead>
+          <tbody>
+            <tr><td><code>F5</code></td><td>Toggle video overlay on/off</td></tr>
+            <tr><td><code>F6</code></td><td>Play / Pause</td></tr>
+            <tr><td><code>F7</code></td><td>Seek backward 10 seconds</td></tr>
+            <tr><td><code>F8</code></td><td>Seek forward 10 seconds</td></tr>
+            <tr><td><code>F9</code></td><td>Load URL from clipboard</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="fade-in" style="margin-top: 32px;">Overlay Keyboard Shortcuts</h3>
+      <div class="table-wrap fade-in">
+        <table>
+          <thead><tr><th>Key</th><th>Action</th></tr></thead>
+          <tbody>
+            <tr><td><code>F9</code></td><td>Toggle interactive mode (click-through &harr; interactive)</td></tr>
+            <tr><td><code>Space</code></td><td>Play / Pause</td></tr>
+            <tr><td><code>Left / Right</code></td><td>Seek backward / forward</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="fade-in" style="margin-top: 32px;">Multiplayer</h3>
+      <p class="fade-in" style="color: var(--text-muted);">P2P sync requires EAC to be disabled on all players. One player hosts, others auto-discover via UDP broadcast on port 7332. Playback state syncs every 500ms with drift correction.</p>
+    </div>
+  </section>
+
+  <!-- ── Reverse Engineering (Collapsible) ────────────────────────── -->
+  <section>
+    <div class="container">
+      <h2 class="section-title fade-in">Reverse Engineering</h2>
+      <p class="section-desc fade-in">Camera data is read from NMS memory to position the video quad in 3D space.</p>
+
+      <div class="fade-in">
+        <div class="accordion-item">
+          <div class="accordion-header">cGcCameraManager Memory Offsets</div>
+          <div class="accordion-body">
+            <div class="accordion-body-inner">
+              <pre><code>Singleton pointer: NMS.exe + 0x56666B0
+
+cGcCameraManager layout:
+  +0x118  Camera mode     (u32, cockpit = 0x10)
+  +0x130  View matrix     (4x4 f32, row-major)
+  +0x1D0  FoV             (f32, degrees)
+  +0x1D4  Aspect ratio    (f32)
+
+View Matrix Format (row-major):
+  [Rx Ry Rz 0]   Right vector
+  [Ux Uy Uz 0]   Up vector
+  [Fx Fy Fz 0]   Forward vector
+  [Px Py Pz 1]   Position</code></pre>
+              <p style="margin-top: 12px;"><strong>Note:</strong> Memory offsets are version-specific and may shift with NMS updates. The mem-scanner tool can re-scan for updated offsets using RTTI patterns.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="accordion-item">
+          <div class="accordion-header">Pattern Scanning Strategies</div>
+          <div class="accordion-body">
+            <div class="accordion-body-inner">
+              <ul style="padding-left: 20px;">
+                <li style="list-style: disc; margin-bottom: 8px;"><strong>RTTI-Based</strong> (most robust, cross-version) &mdash; Scan for RTTI type descriptors like <code>cGcCameraManager</code> class name strings, then follow vtable references to find the singleton.</li>
+                <li style="list-style: disc; margin-bottom: 8px;"><strong>Global Pointer</strong> (fastest, version-specific) &mdash; Direct read from known offset. Fastest approach but breaks on every game update.</li>
+                <li style="list-style: disc; margin-bottom: 8px;"><strong>Code Signature</strong> (medium robustness) &mdash; Scan for instruction patterns that reference the camera manager. More resilient to minor updates.</li>
+              </ul>
+              <p style="margin-top: 12px;">The <code>mem-scanner</code> tool (in <code>tools/mem-scanner/</code>) scanned 2.87 GB of NMS memory in seconds to discover these offsets.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="accordion-item">
+          <div class="accordion-header">Camera Behaviour Types</div>
+          <div class="accordion-body">
+            <div class="accordion-body-inner">
+              <p>NMS has 25 camera behaviour classes. The injector checks for cockpit mode (0x10) before rendering:</p>
+              <div class="table-wrap" style="margin-top: 12px;">
+                <table>
+                  <thead><tr><th>Mode</th><th>Value</th><th>FoV</th><th>Aspect</th></tr></thead>
+                  <tbody>
+                    <tr><td>Cockpit (ModelView)</td><td><code>0x10</code></td><td>75&deg;</td><td>1.5</td></tr>
+                    <tr><td>On-Foot (FirstPerson)</td><td><code>0x40</code></td><td>70&deg;</td><td>1.0</td></tr>
+                    <tr><td>Photo Mode</td><td><code>0x04</code></td><td>Variable</td><td>Variable</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Building from Source ─────────────────────────────────────── -->
+  <section style="background: var(--bg-raised);">
+    <div class="container">
+      <h2 class="section-title fade-in">Building from Source</h2>
+
+      <h3 class="fade-in">Prerequisites</h3>
+      <div class="pills-wrap fade-in" style="justify-content: flex-start; margin: 16px 0 24px;">
+        <span class="pill">Rust (nightly for injector)</span>
+        <span class="pill">ffmpeg 7.0+ dev libraries</span>
+        <span class="pill">Vulkan SDK (optional)</span>
+        <span class="pill">yt-dlp (optional, for YouTube)</span>
+      </div>
+
+      <pre class="fade-in"><code># Clone
+git clone https://github.com/AndrewAltimit/game-mods.git
+cd game-mods
+
+# Build all (release)
+cargo build --release
+
+# Build specific component
+cargo build --release -p nms-video-daemon
+cargo build --release -p nms-video-overlay
+
+# Run tests
+cargo test
+
+# Format + lint
+cargo fmt --all -- --check
+cargo clippy --all-targets -- -D warnings</code></pre>
+
+      <h3 class="fade-in" style="margin-top: 32px;">Limitations</h3>
+      <ul class="fade-in" style="padding-left: 20px; color: var(--text-muted);">
+        <li style="list-style: disc; margin-bottom: 8px;">PC only (Windows primary, Linux via LD_PRELOAD)</li>
+        <li style="list-style: disc; margin-bottom: 8px;">Singleplayer or P2P co-op only (EAC must be disabled)</li>
+        <li style="list-style: disc; margin-bottom: 8px;">Overlay mode requires borderless/windowed</li>
+        <li style="list-style: disc; margin-bottom: 8px;">NMS updates may shift memory offsets (re-scan with mem-scanner)</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ── Footer ──────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <div class="container">
+      <p>Dual-licensed under <strong>Unlicense</strong> and <strong>MIT</strong></p>
+      <p><a href="https://github.com/AndrewAltimit/game-mods" target="_blank" rel="noopener">github.com/AndrewAltimit/game-mods</a></p>
+      <p class="footer-ai">Code authored by AI agents under human direction</p>
+    </div>
+  </footer>
+
+  <script src="js/main.js"></script>
+</body>
+</html>

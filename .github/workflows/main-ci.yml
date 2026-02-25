@@ -259,10 +259,38 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # -- Deploy GitHub Pages --------------------------------------------------
+  deploy-pages:
+    name: Deploy GitHub Pages
+    needs: [ci]
+    if: github.ref == 'refs/heads/main'
+    runs-on: self-hosted
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
   # -- CI Summary ----------------------------------------------------------
   notify:
     name: CI Summary
-    needs: [ci, build-rust-binaries, create-release]
+    needs: [ci, build-rust-binaries, create-release, deploy-pages]
     if: always()
     runs-on: self-hosted
     steps:
@@ -278,6 +306,7 @@ jobs:
           echo "| CI | ${{ needs.ci.result == 'success' && 'pass' || needs.ci.result == 'skipped' && 'skipped' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Rust Binaries | ${{ needs.build-rust-binaries.result == 'success' && 'pass' || needs.build-rust-binaries.result == 'skipped' && 'skipped' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| GitHub Release | ${{ needs.create-release.result == 'success' && 'pass' || needs.create-release.result == 'skipped' && 'skipped' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| GitHub Pages | ${{ needs.deploy-pages.result == 'success' && 'pass' || needs.deploy-pages.result == 'skipped' && 'skipped' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
 
           if [[ "${{ needs.ci.result }}" == "failure" ]]; then
             echo "" >> $GITHUB_STEP_SUMMARY
