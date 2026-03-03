@@ -1,6 +1,6 @@
 # Contributing
 
-This repository does not accept external contributions. All code changes are authored by AI agents (Claude, Gemini, Codex, OpenCode, Crush) operating under human direction.
+This repository does not accept external contributions. All code changes are authored by AI agents under human direction.
 
 ## No External Contributions
 
