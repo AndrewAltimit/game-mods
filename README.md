@@ -1,70 +1,90 @@
-# Game Mods
+# Injection Toolkit (ITK) & Game Mods
 
-**Monorepo for game modification projects built on the Injection Toolkit framework.**
+A Rust framework for safe game modification. Injects minimal code into game processes while delegating heavy processing to external daemons and overlays, connected via IPC and shared memory. All code is authored by AI agents under human direction.
 
-Game-specific mods that inject custom rendering, overlays, and automation into game processes. Built in Rust with cross-platform IPC, shared memory, and Vulkan/OpenVR hooking.
+**Use this repo to learn how to:**
+- Hook Vulkan and OpenVR pipelines for in-game rendering (including VR)
+- Build cross-platform IPC (named pipes / Unix sockets) and lock-free shared memory (seqlock)
+- Decode and stream video into a live game process with hardware acceleration
+- Structure a Rust injection toolkit as a reusable framework with game-specific project crates
+- Run containerized CI/CD for agent-authored Rust code on self-hosted runners
 
-All code is authored by AI agents under human direction.
+> **OpenAI Notice:** All OpenAI/Codex/GPT integrations have been disabled due to concerns about mass surveillance partnerships. Anthropic Claude is the primary AI backend. See the [template repo](https://github.com/AndrewAltimit/template-repo#ai-agents) for full context.
 
-## Security Notice: OpenAI / Codex Phased Out
+---
 
-**OpenAI Codex and all OpenAI/GPT-based tooling has been disabled in this project effective immediately.**
+## Quick Start
 
-OpenAI is actively partnering with governments and agencies that conduct **mass surveillance** of civilian populations and enable **autonomous weapons**. The mass surveillance capability alone — where nation-state actors can monitor, profile, and target individuals at scale through AI systems — represents a fundamental and unacceptable security risk to developers, contributors, and end users.
+**Prerequisites:** Linux/Windows with Docker (v20.10+) and Rust toolchain
 
-**What this means for this project:**
-- The Codex MCP server has been disabled in `docker-compose.yml` and `.mcp.json`
-- The Codex CLI launcher scripts (`run_codex.sh`, `run_codex_container.sh`) exit immediately with a warning
-- Codex AI code review has been removed from the CI pipeline
-- No OpenAI API keys or tokens should be used in any workflow
+```bash
+git clone https://github.com/AndrewAltimit/game-mods
+cd game-mods
 
-**What we recommend instead:**
-- **Anthropic Claude** is the primary AI model used for all code generation, review, and agent workflows in this project
-- Open-weight models via OpenRouter (Qwen, etc.) remain available as alternatives
-- If you choose to use OpenAI products despite these concerns, do so with extreme caution and a full understanding of the surveillance implications
+# Run the CI pipeline locally (matches GitHub Actions exactly)
+docker compose --profile ci run --rm rust-ci cargo fmt --all -- --check
+docker compose --profile ci run --rm rust-ci cargo clippy --all-targets -- -D warnings
+docker compose --profile ci run --rm rust-ci cargo test
+docker compose --profile ci run --rm rust-ci cargo build --release
+docker compose --profile ci run --rm rust-ci cargo deny check
 
-This is not a technical decision — it is an ethical one. We encourage all downstream users and forks to evaluate their own risk tolerance, but we believe the mass surveillance threat from nation-state partnerships is far too serious for most people to accept.
+# Or run directly (requires local Rust toolchain)
+cargo test
+cargo build --release
+```
+
+CI pipeline order: **fmt check -> clippy -> test -> build -> cargo-deny**
 
 ## Projects
 
-| Mod | Game | Description |
-|-----|------|-------------|
-| [NMS Cockpit Video](projects/nms-cockpit-video/) | No Man's Sky | In-cockpit video player via Vulkan injection + desktop overlay |
+| Mod | Game | Description | Docs |
+|-----|------|-------------|------|
+| [NMS Cockpit Video](projects/nms-cockpit-video/) | No Man's Sky | In-cockpit video player via Vulkan injection + desktop overlay | [README](projects/nms-cockpit-video/README.md) |
 
 ## Architecture
 
-The injection toolkit provides a **minimal injection, maximal external processing** framework:
+The framework follows a **minimal injection, maximal external processing** philosophy. Each component runs in its own process -- a crash in one never brings down the others.
 
 ```
 Launcher (orchestration)
-  |
-  +-- Daemon (external process)     <-- video decode, audio, IPC server
-  |     |
-  |     +-- Shared Memory           <-- lock-free frame transport (seqlock)
-  |     +-- IPC (named pipes)       <-- commands, projection data
-  |
-  +-- Injector (DLL in target)      <-- Vulkan hooks, texture rendering
-  |
-  +-- Overlay (optional desktop)    <-- egui + wgpu transparent window
+  ├── Daemon (external process)     video decode, audio, IPC server, shared memory writer
+  │     ├── Shared Memory           lock-free frame transport (seqlock, single-writer)
+  │     └── IPC (pipes/sockets)     commands, state data, projection matrices
+  ├── Injector (DLL/SO in target)   Vulkan hooks, minimal state extraction, IPC client
+  └── Overlay (optional desktop)    egui + wgpu transparent window, shared memory reader
 ```
 
-### Core Libraries
+**Design constraints:**
+- Injector stays under 5 MB memory, no blocking operations, no complex processing
+- Seqlock shared memory is single-writer only -- multiple writers corrupt data
+- All injector data is treated as untrusted (NaN/Inf rejection, bounds checking, size caps)
+- Components communicate exclusively via IPC and shared memory, never direct calls
+
+For the full technical design (wire protocol, seqlock algorithm, security threat model, performance budgets), see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Workspace Structure
+
+### Core Libraries (`core/`)
+
+Shared ITK crates used by all projects.
 
 | Crate | Purpose |
 |-------|---------|
-| `itk-protocol` | Wire protocol definitions (serde + bincode) |
-| `itk-shmem` | Cross-platform shared memory (Windows/Linux) |
-| `itk-ipc` | Cross-platform IPC channels (named pipes/Unix sockets) |
+| `itk-protocol` | Wire protocol -- 20-byte header + bitcode payload, CRC32 validated, 1 MB max |
+| `itk-shmem` | Cross-platform shared memory with seqlock (single-writer, multi-reader) |
+| `itk-ipc` | Named pipes (Windows) / Unix domain sockets (Linux) |
 | `itk-sync` | Clock synchronization and drift correction |
-| `itk-video` | Video decoding via ffmpeg + frame management |
-| `itk-net` | P2P networking for multiplayer sync (laminar) |
+| `itk-video` | Video decoding via ffmpeg-next with D3D11VA hardware acceleration |
+| `itk-net` | P2P networking via laminar (UDP broadcast discovery, leader election) |
 
 ### Framework Templates
 
+Reusable starting points for new game mods.
+
 | Crate | Purpose |
 |-------|---------|
-| `itk-daemon` | Central coordinator daemon template |
-| `itk-overlay` | wgpu-based transparent overlay window template |
+| `itk-daemon` | Coordinator daemon template (IPC server, shared memory writer) |
+| `itk-overlay` | Transparent overlay window template (egui + wgpu, click-through) |
 | `itk-native-dll` | Windows DLL injection template |
 | `itk-ld-preload` | Linux LD_PRELOAD injection template |
 
@@ -72,59 +92,70 @@ Launcher (orchestration)
 
 | Tool | Purpose |
 |------|---------|
-| `mem-scanner` | Memory pattern scanning utility for reverse engineering |
+| `mem-scanner` | Memory pattern scanning utility for reverse engineering game processes |
 
-## Project Structure
+### Project Layout
 
 ```
 game-mods/
-+-- core/                          # Shared libraries
-|   +-- itk-protocol/
-|   +-- itk-shmem/
-|   +-- itk-ipc/
-|   +-- itk-sync/
-|   +-- itk-video/
-|   +-- itk-net/
-+-- daemon/                        # Framework: coordinator daemon
-+-- overlay/                       # Framework: transparent overlay
-+-- injectors/                     # Framework: injection templates
-|   +-- windows/native-dll/
-|   +-- linux/ld-preload/
-+-- projects/                      # Game-specific mods
-|   +-- nms-cockpit-video/
-|       +-- daemon/                # NMS video playback daemon
-|       +-- injector/              # Vulkan DLL injection (cdylib)
-|       +-- overlay/               # Desktop overlay (egui + wgpu)
-|       +-- launcher/              # Process orchestrator
-|       +-- mod/                   # Reloaded-II C# mod (optional)
-|       +-- docs/                  # Reverse engineering notes
-+-- tools/
-|   +-- mem-scanner/               # Memory scanning utility
-+-- docker/                        # CI Dockerfiles
-+-- .github/                       # GitHub Actions workflows
-```
-
-## Development
-
-```bash
-# Containerized CI (matches GitHub Actions)
-docker compose --profile ci run --rm rust-ci cargo fmt --all -- --check
-docker compose --profile ci run --rm rust-ci cargo clippy --all-targets -- -D warnings
-docker compose --profile ci run --rm rust-ci cargo test
-docker compose --profile ci run --rm rust-ci cargo build --release
-docker compose --profile ci run --rm rust-ci cargo deny check
+├── core/                           Shared ITK libraries
+│   ├── itk-protocol/                 Wire protocol definitions
+│   ├── itk-shmem/                    Cross-platform shared memory (seqlock)
+│   ├── itk-ipc/                      Cross-platform IPC channels
+│   ├── itk-sync/                     Clock synchronization
+│   ├── itk-video/                    Video decode + frame management
+│   └── itk-net/                      P2P networking (laminar)
+├── daemon/                         Framework: coordinator daemon template
+├── overlay/                        Framework: transparent overlay template
+├── injectors/                      Framework: injection templates
+│   ├── windows/native-dll/           Windows DLL injection
+│   └── linux/ld-preload/             Linux LD_PRELOAD injection
+├── projects/                       Game-specific mods
+│   └── nms-cockpit-video/
+│       ├── daemon/                   Video playback + audio daemon
+│       ├── injector/                 Vulkan DLL injection (nightly, cdylib)
+│       ├── overlay/                  Desktop overlay (egui + wgpu)
+│       └── launcher/                Process orchestrator
+├── tools/
+│   └── mem-scanner/                Memory scanning utility
+├── site/                           GitHub Pages documentation site
+├── docs/                           Technical documentation
+│   ├── ARCHITECTURE.md               Full architecture design doc
+│   └── MIGRATION.md                  FlatBuffers migration plan
+├── docker/                         CI Dockerfiles
+└── .github/                        GitHub Actions workflows
 ```
 
 ## Technology Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Language | Rust (Edition 2024) |
-| Video | ffmpeg-next 7.0, cpal 0.15 (audio) |
+| Language | Rust (Edition 2024, 13 workspace crates) |
+| Serialization | bitcode (protocol), bincode (legacy via laminar) |
+| Video | ffmpeg-next 7.0 (D3D11VA hw accel), cpal 0.15 (audio) |
 | Graphics | ash 0.38 (Vulkan), wgpu 0.20, egui 0.28 |
-| Hooking | retour 0.3 (function detours) |
+| Hooking | retour 0.3 (function detours, static_detour) |
+| Networking | laminar 0.5 (P2P UDP), tokio (async runtime) |
 | Platform | windows 0.58 (Win32), nix 0.29 (Unix) |
-| CI/CD | GitHub Actions (self-hosted runner, Docker containers) |
+| CI/CD | GitHub Actions (self-hosted runners, Docker containers) |
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Architecture](docs/ARCHITECTURE.md) | Full technical design -- protocol, seqlock, security, performance budgets |
+| [Migration Plan](docs/MIGRATION.md) | FlatBuffers migration roadmap (bincode -> cross-language) |
+| [NMS Cockpit Video](projects/nms-cockpit-video/README.md) | Project docs -- building, usage, injector architecture, hook points |
+| [CLAUDE.md](CLAUDE.md) | Claude Code agent instructions |
+| [AGENTS.md](AGENTS.md) | Universal AI agent guidelines |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution policy (no external contributions) |
+| [GitHub Pages Site](https://AndrewAltimit.github.io/game-mods/) | Interactive documentation and project showcase |
+
+## Companion Repository
+
+| Repository | Description |
+|------------|-------------|
+| [template-repo](https://github.com/AndrewAltimit/template-repo) | Parent project -- agent orchestration, MCP servers, CI/CD templates, security tooling |
 
 ## License
 

@@ -100,7 +100,7 @@ Three GitHub Actions workflows on self-hosted runners:
 
 - **`ci.yml`** — Runs on push to main. Format, lint, test, build, cargo-deny.
 - **`main-ci.yml`** — Runs on main push and tags. Same CI stages plus auto-creates GitHub issues on failure.
-- **`pr-validation.yml`** — Runs on PRs. CI stages + Gemini AI review (primary) + automated agent fix iterations (max 5, extendable with `[CONTINUE]` comment). Add `no-auto-fix` label to disable automated fixes. *(Note: Codex AI review has been disabled due to OpenAI security concerns — see README.md.)*
+- **`pr-validation.yml`** — Runs on PRs. CI stages + Gemini AI review (primary) + automated agent fix iterations (max 5, extendable with `[CONTINUE]` comment). Add `no-auto-fix` label to disable automated fixes.
 
 Agent commit authors: `AI Review Agent`, `AI Pipeline Agent`, `AI Agent Bot`.
 
