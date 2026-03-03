@@ -89,21 +89,10 @@
         "stdio"
       ]
     },
-    "codex": {
-      "command": "docker",
+    "_codex_DISABLED_SECURITY_RISK": {
+      "command": "echo",
       "args": [
-        "compose",
-        "-f",
-        "./docker-compose.yml",
-        "--profile",
-        "services",
-        "run",
-        "--rm",
-        "-T",
-        "mcp-codex",
-        "mcp-codex",
-        "--mode",
-        "stdio"
+        "DISABLED: OpenAI Codex is phased out due to security concerns (mass surveillance, autonomous weapons). See README.md. Use Anthropic models instead."
       ]
     },
     "github-board": {

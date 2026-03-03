@@ -1,7 +1,27 @@
 #!/bin/bash
 # run_codex_container.sh - Run Codex CLI in Docker container
+#
+# DISABLED: OpenAI Codex has been phased out of this project due to security
+# concerns. OpenAI is partnering with governments that conduct mass
+# surveillance and enable autonomous weapons. This poses unacceptable
+# risk to users. Use Anthropic Claude-based tooling instead.
+# See README.md for full details.
 
 set -e
+
+echo "============================================================"
+echo "  DISABLED: OpenAI Codex has been phased out"
+echo ""
+echo "  OpenAI is partnering with governments that conduct mass"
+echo "  surveillance and enable autonomous weapons."
+echo "  This poses unacceptable risk to users."
+echo ""
+echo "  Use Anthropic Claude-based tooling instead."
+echo "  See README.md for details."
+echo "============================================================"
+exit 1
+
+# --- Original script below (retained but unreachable) ---
 
 echo "🐳 Starting Codex CLI in Container"
 

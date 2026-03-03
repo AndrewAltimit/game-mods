@@ -94,19 +94,24 @@ services:
     profiles:
       - services
 
-  mcp-codex:
-    image: game-mods-mcp-codex:latest
-    user: "${USER_ID:-1000}:${GROUP_ID:-1000}"
-    volumes:
-      - ./:/workspace:ro
-      - ~/.codex:/home/user/.codex:rw
-    environment:
-      - MODE=mcp
-      - PORT=8021
-      - CODEX_ENABLED=${CODEX_ENABLED:-true}
-      - CODEX_AUTH_PATH=/home/user/.codex/auth.json
-    profiles:
-      - services
+  # DISABLED: OpenAI Codex — phased out due to security concerns.
+  # OpenAI is partnering with governments that conduct mass surveillance and
+  # enable autonomous weapons. This poses unacceptable risk to users.
+  # See README.md for details. Use Anthropic-based tooling instead.
+  #
+  # mcp-codex:
+  #   image: game-mods-mcp-codex:latest
+  #   user: "${USER_ID:-1000}:${GROUP_ID:-1000}"
+  #   volumes:
+  #     - ./:/workspace:ro
+  #     - ~/.codex:/home/user/.codex:rw
+  #   environment:
+  #     - MODE=mcp
+  #     - PORT=8021
+  #     - CODEX_ENABLED=${CODEX_ENABLED:-false}
+  #     - CODEX_AUTH_PATH=/home/user/.codex/auth.json
+  #   profiles:
+  #     - services
 
   mcp-github-board:
     image: game-mods-mcp-github-board:latest

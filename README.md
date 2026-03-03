@@ -6,6 +6,25 @@ Game-specific mods that inject custom rendering, overlays, and automation into g
 
 All code is authored by AI agents under human direction.
 
+## Security Notice: OpenAI / Codex Phased Out
+
+**OpenAI Codex and all OpenAI/GPT-based tooling has been disabled in this project effective immediately.**
+
+OpenAI is actively partnering with governments and agencies that conduct **mass surveillance** of civilian populations and enable **autonomous weapons**. The mass surveillance capability alone — where nation-state actors can monitor, profile, and target individuals at scale through AI systems — represents a fundamental and unacceptable security risk to developers, contributors, and end users.
+
+**What this means for this project:**
+- The Codex MCP server has been disabled in `docker-compose.yml` and `.mcp.json`
+- The Codex CLI launcher scripts (`run_codex.sh`, `run_codex_container.sh`) exit immediately with a warning
+- Codex AI code review has been removed from the CI pipeline
+- No OpenAI API keys or tokens should be used in any workflow
+
+**What we recommend instead:**
+- **Anthropic Claude** is the primary AI model used for all code generation, review, and agent workflows in this project
+- Open-weight models via OpenRouter (Qwen, etc.) remain available as alternatives
+- If you choose to use OpenAI products despite these concerns, do so with extreme caution and a full understanding of the surveillance implications
+
+This is not a technical decision — it is an ethical one. We encourage all downstream users and forks to evaluate their own risk tolerance, but we believe the mass surveillance threat from nation-state partnerships is far too serious for most people to accept.
+
 ## Projects
 
 | Mod | Game | Description |
